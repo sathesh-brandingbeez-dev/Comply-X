@@ -15,23 +15,23 @@ export async function listEvents(params?: {
       else if (v !== undefined) q.set(k, String(v));
     });
   }
-  return api<CalendarEvent[]>(`/calendar/events?${q.toString()}`);
+  return api<CalendarEvent[]>(`api/calendar/events?${q.toString()}`);
 }
 
 export async function createEvent(payload: CalendarEventIn) {
-  return api<CalendarEvent>("/calendar/events", { method: "POST", body: JSON.stringify(payload) });
+  return api<CalendarEvent>("api/calendar/events", { method: "POST", body: JSON.stringify(payload) });
 }
 
 export async function updateEvent(id: number, payload: Partial<CalendarEventIn>) {
-  return api<CalendarEvent>(`/calendar/events/${id}`, { method: "PUT", body: JSON.stringify(payload) });
+  return api<CalendarEvent>(`api/calendar/events/${id}`, { method: "PUT", body: JSON.stringify(payload) });
 }
 
 export async function deleteEvent(id: number, hard = false) {
   const q = hard ? "?hard=true" : "";
-  return api<void>(`/calendar/events/${id}${q}`, { method: "DELETE" });
+  return api<void>(`api/calendar/events/${id}${q}`, { method: "DELETE" });
 }
 
 export async function getStats(mine = false) {
   const q = mine ? "?mine=true" : "";
-  return api<CalendarStats>(`/calendar/stats${q}`);
+  return api<CalendarStats>(`api/calendar/stats${q}`);
 }

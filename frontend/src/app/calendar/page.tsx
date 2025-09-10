@@ -6,6 +6,7 @@ import CalendarGrid from "../../components/calendar/CalendarGrid";
 import EventSheet from "../../components/calendar/EventSheet";
 import ProjectMiniPanel from "../../components/calendar/ProjectMiniPanel";
 import { Button } from "@/components/ui/button";
+import { Plus, ChevronLeft, ChevronRight } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { listEvents, getStats } from "@/lib/calendar-client";
 import type { CalendarEvent, CalendarStats } from "@/types/calendar";
@@ -221,22 +222,23 @@ export default function CalendarPage() {
         <h1 className="text-xl font-semibold">Calendar</h1>
         <div className="ml-auto flex items-center gap-2">
           <Button variant="outline" onClick={gotoPrev} disabled={loading}>
-            ◀
+            <ChevronLeft className="h-4 w-4" />
           </Button>
           <Button variant="outline" onClick={gotoToday} disabled={loading}>
             Today
           </Button>
           <Button variant="outline" onClick={gotoNext} disabled={loading}>
-            ▶
+            <ChevronRight className="h-4 w-4" />
           </Button>
           <Button
             onClick={() => {
               setEditing(null);
               setSheetOpen(true);
             }}
-            disabled={loading}
+            // disabled={loading}
           >
-            Add Event
+            {/* Add Event */}
+            <Plus className="mr-2 h-4 w-4" /> Add Task
           </Button>
           <Button variant="outline" onClick={fetchData} disabled={loading}>
             {loading ? "Refreshing…" : "Refresh"}

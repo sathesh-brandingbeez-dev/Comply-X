@@ -41,6 +41,8 @@ export default function CalendarGrid({
     return map;
   }, [events]);
 
+  const todayStr = new Date().toISOString().slice(0, 10);
+
   const agendaSorted = useMemo(
     () =>
       [...events].sort(
@@ -76,8 +78,12 @@ export default function CalendarGrid({
       {days.map((d) => {
         const key = d.toISOString().slice(0, 10);
         const dayEvents = byDay[key] || [];
+        const isToday = key === todayStr;
         return (
-          <div key={key} className="border rounded-lg p-2 min-h-[120px]">
+          <div
+            key={key}
+            className={`border rounded-lg p-2 min-h-[120px] ${isToday ? "bg-muted" : ""}`}
+          >
             <div className="text-xs mb-2 opacity-70">{d.toDateString()}</div>
             <div className="flex flex-col gap-2">
               {dayEvents.slice(0, 3).map((ev) => (

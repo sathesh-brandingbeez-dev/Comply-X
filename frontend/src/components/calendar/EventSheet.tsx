@@ -229,19 +229,19 @@ export default function EventSheet({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-2xl">
+      <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>{initial?.id ? "Edit Event" : "Add Event"}</DialogTitle>
+          <DialogTitle>{initial?.id ? "Edit Task" : "Add Task"}</DialogTitle>
         </DialogHeader>
 
         <form className="grid grid-cols-1 md:grid-cols-2 gap-4" onSubmit={handleSubmit(onSubmit)}>
           <div className="md:col-span-2">
-            <Label htmlFor="title">Event Title</Label>
+            <Label htmlFor="title">Task Title</Label>
             <Input id="title" {...register("title", { required: true, minLength: 2, maxLength: 200 })} />
           </div>
 
           <div>
-            <Label>Event Type</Label>
+            <Label>Task Type</Label>
             <Controller
               control={control}
               name="type"
@@ -327,7 +327,7 @@ export default function EventSheet({
           </div>
 
           <div className="md:col-span-2">
-            <Label>All Day Event</Label>
+            <Label>All Day Task</Label>
             <Controller
               control={control}
               name="all_day"
@@ -422,7 +422,7 @@ export default function EventSheet({
               Cancel
             </Button>
             <Button type="submit" disabled={isSubmitting || !isDirty}>
-              {isSubmitting ? "Saving…" : initial?.id ? "Save Changes" : "Create Event"}
+              {isSubmitting ? "Saving…" : initial?.id ? "Save Changes" : "Create Task"}
             </Button>
           </DialogFooter>
         </form>

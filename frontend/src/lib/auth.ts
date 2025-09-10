@@ -1,6 +1,11 @@
 import axios from 'axios'
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'https://comply-x.onrender.com'
+const API_BASE_URL =
+  process.env.NODE_ENV === "development"
+    ? "/api"
+    : process.env.NEXT_PUBLIC_API_URL || "/api"
+
+// const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 
 export interface User {
   id: number
@@ -73,7 +78,7 @@ class AuthService {
           // Only auto-redirect if we're not already on the login page
           // and if this is a token expiration (not a login attempt)
           const currentPath = window.location.pathname
-          const isLoginAttempt = error.config?.url?.includes('/api/auth/login')
+          const isLoginAttempt = error.config?.url?.includes('/auth/login')
           
           if (!isLoginAttempt && currentPath !== '/login') {
             this.clearToken()
@@ -86,7 +91,7 @@ class AuthService {
   }
 
   async login(credentials: LoginCredentials): Promise<AuthResponse> {
-    const endpoint = credentials.mfa_code ? '/api/auth/mfa/login' : '/api/auth/login'
+    const endpoint = credentials.mfa_code ? '/auth/mfa/login' : '/auth/login'
     const response = await this.apiClient.post(endpoint, credentials)
     const authData = response.data
     this.setToken(authData.access_token)
@@ -94,28 +99,28 @@ class AuthService {
   }
 
   async requestPasswordReset(email: string): Promise<void> {
-    await this.apiClient.post('/api/auth/password-reset/request', { email })
+    await this.apiClient.post('/auth/password-reset/request', { email })
   }
 
   async confirmPasswordReset(token: string, newPassword: string): Promise<void> {
-    await this.apiClient.post('/api/auth/password-reset/confirm', {
+    await this.apiClient.post('/auth/password-reset/confirm', {
       token,
       new_password: newPassword
     })
   }
 
   async getMFAStatus(): Promise<{enabled: boolean, methods: string[]}> {
-    const response = await this.apiClient.get('/api/auth/mfa/status')
+    const response = await this.apiClient.get('/auth/mfa/status')
     return response.data
   }
 
   async setupMFA(password: string): Promise<{secret: string, qr_code: string, backup_codes: string[]}> {
-    const response = await this.apiClient.post('/api/auth/mfa/setup', { password })
+    const response = await this.apiClient.post('/auth/mfa/setup', { password })
     return response.data
   }
 
   async verifyMFA(secret: string, verificationCode: string, backupCodes: string[]): Promise<void> {
-    await this.apiClient.post('/api/auth/mfa/verify', {
+    await this.apiClient.post('/auth/mfa/verify', {
       secret,
       verification_code: verificationCode,
       backup_codes: backupCodes
@@ -123,21 +128,21 @@ class AuthService {
   }
 
   async disableMFA(password: string): Promise<void> {
-    await this.apiClient.post('/api/auth/mfa/disable', { password })
+    await this.apiClient.post('/auth/mfa/disable', { password })
   }
 
   async register(userData: RegisterData): Promise<User> {
-    const response = await this.apiClient.post('/api/auth/register', userData)
+    const response = await this.apiClient.post('/auth/register', userData)
     return response.data
   }
 
   async getCurrentUser(): Promise<User> {
-    const response = await this.apiClient.get('/api/auth/me')
+    const response = await this.apiClient.get('/auth/me')
     return response.data
   }
 
   async getUsers(): Promise<User[]> {
-    const response = await this.apiClient.get('/api/auth/users')
+    const response = await this.apiClient.get('/auth/users')
     return response.data
   }
 

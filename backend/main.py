@@ -61,52 +61,27 @@ app = FastAPI(
             "description": "Failure Mode and Effects Analysis (FMEA) operations"
         },
         {
+            "name": "calendar",
+            "description": "Calendar management operations"
+        },
+        {
             "name": "calendar-ai",
             "description": "AI-powered calendar management operations"
         }
     ]
 )
 
-# Custom CORS middleware to ensure headers are always set
-class CustomCORSMiddleware(BaseHTTPMiddleware):
-    async def dispatch(self, request: Request, call_next):
-        origin = request.headers.get("origin")
-        allowed_origins = [
-            # "https://comply-x-tyle.onrender.com",
-            "http://localhost:3000",
-            # "http://127.0.0.1:3000"
-        ]
-        
-        # Handle preflight requests
-        if request.method == "OPTIONS":
-            response = Response()
-            if origin in allowed_origins:
-                response.headers["Access-Control-Allow-Origin"] = origin
-            response.headers["Access-Control-Allow-Credentials"] = "true"
-            response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS, PATCH"
-            response.headers["Access-Control-Allow-Headers"] = "Accept, Accept-Language, Content-Language, Content-Type, Authorization, X-Requested-With, Origin"
-            response.headers["Access-Control-Max-Age"] = "600"
-            return response
-        
-        response = await call_next(request)
-        
-        # Add CORS headers to actual requests
-        if origin in allowed_origins:
-            response.headers["Access-Control-Allow-Origin"] = origin
-            response.headers["Access-Control-Allow-Credentials"] = "true"
-            response.headers["Access-Control-Expose-Headers"] = "*"
-        
-        return response
-
 # CORS middleware
-app.add_middleware(CustomCORSMiddleware)
+
+ALLOWED_ORIGINS = [
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    # "https://comply-x-tyle.onrender.com",
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        # "https://comply-x-tyle.onrender.com",
-        "http://localhost:3000",
-        # "http://127.0.0.1:3000"
-    ],
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
     allow_headers=[
@@ -139,9 +114,6 @@ async def root():
 async def health_check():
     return {"status": "healthy", "message": "Comply-X API is running successfully"}
 
-@app.options("/{full_path:path}")
-async def options_handler(full_path: str):
-    return {"message": "OK"}
 
 # app.mount("/_next", StaticFiles(directory="static/.next"), name="_next")
 # app.mount("/public", StaticFiles(directory="static/public"), name="public")
