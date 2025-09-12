@@ -23,6 +23,8 @@ import {
 } from "@/components/ui/select";
 import { api } from "@/lib/api";
 
+type ReminderInput = { minutes_before: number };
+
 // ---------- types kept minimal for upsert ----------
 type EventType =
   | "Audit"
@@ -53,7 +55,8 @@ export type EventUpsertInput = {
   time_zone?: string;
   attendees_required?: string[];
   attendees_optional?: string[];
-  reminders: number[]; // minutes-before
+  // reminders: number[]; // minutes-before
+  reminders: ReminderInput[];
 };
 
 type EventFormValues = {
@@ -77,8 +80,10 @@ type EventFormValues = {
 };
 
 type InitialEvent = Partial<
-  EventUpsertInput & {
+  // EventUpsertInput & { 
+  Omit<EventUpsertInput, "reminders"> & {
     id?: string | number;
+    reminders?: number[];
   }
 >;
 
@@ -209,7 +214,8 @@ export default function EventSheet({
       time_zone: values.time_zone,
       attendees_required,
       attendees_optional,
-      reminders: values.reminders,
+      // reminders: values.reminders,
+      reminders: values.reminders.map((m) => ({ minutes_before: m })),
     };
 
     if (upsertEvent) {

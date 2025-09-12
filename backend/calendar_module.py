@@ -14,7 +14,7 @@ from models import (
 from schemas import (
     EventCreate, EventUpdate, EventOut, CalendarStats,
     ProjectCreate, ProjectUpdate, ProjectOut,
-    TaskCreate, TaskUpdate, TaskOut
+    TaskCreate, TaskUpdate, TaskOut, ReminderMethod
 )
 
 # Optional recurrence expansion:
@@ -84,11 +84,22 @@ def create_event(payload: EventCreate, db: Session = Depends(get_db), current_us
     # Reminders
     if payload.reminders:
         for r in payload.reminders:
+            if isinstance(r, int):
+                minutes_before = r
+                method = ReminderMethod.EMAIL.value
+                custom_message = None
+            else:
+                minutes_before = r.minutes_before
+                method = r.method.value
+                custom_message = r.custom_message
             db.add(EventReminder(
                 event_id=event.id,
-                minutes_before=r.minutes_before,
-                method=r.method.value,
-                custom_message=r.custom_message
+                # minutes_before=r.minutes_before,
+                # method=r.method.value,
+                # custom_message=r.custom_message
+                minutes_before=minutes_before,
+                method=method,
+                custom_message=custom_message
             ))
     db.commit()
     db.refresh(event)
@@ -222,8 +233,23 @@ def update_event(event_id: int, payload: EventUpdate, db: Session = Depends(get_
             db.add(EventAttendee(event_id=e.id, user_id=a.user_id, email=a.email, required=a.required))
     if "reminders" in data and data["reminders"] is not None:
         db.query(EventReminder).filter_by(event_id=e.id).delete()
-        for r in data["reminders"]:
-            db.add(EventReminder(event_id=e.id, minutes_before=r.minutes_before, method=r.method.value, custom_message=r.custom_message))
+        # for r in data["reminders"]:
+        #     db.add(EventReminder(event_id=e.id, minutes_before=r.minutes_before, method=r.method.value, custom_message=r.custom_message))
+        for r in payload.reminders or []:
+            if isinstance(r, int):
+                minutes_before = r
+                method = ReminderMethod.EMAIL.value
+                custom_message = None
+            else:
+                minutes_before = r.minutes_before
+                method = r.method.value
+                custom_message = r.custom_message
+            db.add(EventReminder(
+                event_id=e.id,
+                minutes_before=minutes_before,
+                method=method,
+                custom_message=custom_message,
+            ))
 
     db.commit()
     db.refresh(e)

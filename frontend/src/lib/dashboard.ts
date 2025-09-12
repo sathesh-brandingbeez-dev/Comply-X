@@ -1,4 +1,5 @@
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'https://comply-x.onrender.com'
+// const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'https://comply-x.onrender.com'
+import { api } from "./api";
 
 export interface DocumentStats {
   total_documents: number
@@ -41,59 +42,68 @@ export interface DashboardData {
 /**
  * Get authentication token from localStorage
  */
-function getToken(): string | null {
-  if (typeof window === 'undefined') return null
-  return localStorage.getItem('auth_token')
-}
+// function getToken(): string | null {
+//   if (typeof window === 'undefined') return null
+//   return localStorage.getItem('auth_token')
+// }
 
 /**
  * Fetch document statistics from the backend
  */
 export async function fetchDocumentStats(): Promise<DocumentStats> {
-  const token = getToken()
-  if (!token) {
-    throw new Error('No authentication token found')
-  }
+  // const token = getToken()
+  // if (!token) {
+  //   throw new Error('No authentication token found')
+  // }
 
-  const response = await fetch(`${API_BASE_URL}/api/documents/stats/overview`, {
-    headers: {
-      'Authorization': `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    },
-  })
+  // const response = await fetch(`${API_BASE_URL}/api/documents/stats/overview`, {
+  //   headers: {
+  //     'Authorization': `Bearer ${token}`,
+  //     'Content-Type': 'application/json',
+  //   },
+  // })
 
-  if (!response.ok) {
-    throw new Error(`Failed to fetch document stats: ${response.statusText}`)
-  }
+  // if (!response.ok) {
+  //   throw new Error(`Failed to fetch document stats: ${response.statusText}`)
+  // }
 
-  return response.json()
+  // return response.json()
+  return api<DocumentStats>("/api/documents/stats/overview")
 }
 
 /**
  * Fetch assignment statistics
  */
 export async function fetchAssignmentStats(): Promise<AssignmentStats> {
-  const token = getToken()
-  if (!token) {
-    throw new Error('No authentication token found')
-  }
+  // const token = getToken()
+  // if (!token) {
+  //   throw new Error('No authentication token found')
+  // }
 
   try {
-    const response = await fetch(`${API_BASE_URL}/api/document-assignments/assignments/stats`, {
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json',
-      },
-    })
+    // const response = await fetch(`${API_BASE_URL}/api/document-assignments/assignments/stats`, {
+    //   headers: {
+    //     'Authorization': `Bearer ${token}`,
+    //     'Content-Type': 'application/json',
+    //   },
+    // })
 
-    if (response.ok) {
-      const data = await response.json()
-      return {
-        total_assignments: data.total_assignments || 0,
-        pending: data.pending_assignments || 0,
-        completed: data.completed_assignments || 0,
-        overdue: data.overdue_assignments || 0,
-      }
+    // if (response.ok) {
+    //   const data = await response.json()
+    //   return {
+    //     total_assignments: data.total_assignments || 0,
+    //     pending: data.pending_assignments || 0,
+    //     completed: data.completed_assignments || 0,
+    //     overdue: data.overdue_assignments || 0,
+    //   }
+    const data = await api<any>(
+      "/api/document-assignments/assignments/stats"
+    )
+    return {
+      total_assignments: data.total_assignments || 0,
+      pending: data.pending_assignments || 0,
+      completed: data.completed_assignments || 0,
+      overdue: data.overdue_assignments || 0,
     }
   } catch (error) {
     console.log('Assignment stats not available, using fallback data')
@@ -112,23 +122,27 @@ export async function fetchAssignmentStats(): Promise<AssignmentStats> {
  * Fetch department assignment statistics
  */
 export async function fetchDepartmentAssignmentStats(): Promise<DepartmentAssignmentStats[]> {
-  const token = getToken()
-  if (!token) {
-    throw new Error('No authentication token found')
-  }
+  // const token = getToken()
+  // if (!token) {
+  //   throw new Error('No authentication token found')
+  // }
 
   try {
-    const response = await fetch(`${API_BASE_URL}/api/document-assignments/assignments/stats/departments`, {
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json',
-      },
-    })
+    // const response = await fetch(`${API_BASE_URL}/api/document-assignments/assignments/stats/departments`, {
+    //   headers: {
+    //     'Authorization': `Bearer ${token}`,
+    //     'Content-Type': 'application/json',
+    //   },
+    // })
 
-    if (response.ok) {
-      const data = await response.json()
-      return data.departments || []
-    }
+    // if (response.ok) {
+    //   const data = await response.json()
+    //   return data.departments || []
+    // }
+    const data = await api<{ departments?: DepartmentAssignmentStats[] }>(
+      "/api/document-assignments/assignments/stats/departments"
+    )
+    return data.departments || []
   } catch (error) {
     console.log('Department assignment stats not available')
   }

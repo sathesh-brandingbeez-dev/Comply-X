@@ -29,7 +29,9 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
     headers.set("Authorization", `Bearer ${token}`);
   }
 
-  const res = await fetch(`${API_BASE}${path}`, {
+  // const res = await fetch(`${API_BASE}${path}`, {
+  const url = new URL(path, API_BASE).toString();
+  const res = await fetch(url, {
     ...init,
     headers,
     cache: "no-store",

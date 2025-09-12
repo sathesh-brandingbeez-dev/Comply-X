@@ -840,7 +840,8 @@ class EventBase(BaseModel):
 
 class EventCreate(EventBase):
     attendees: Optional[List[AttendeeCreate]] = None
-    reminders: Optional[List[ReminderCreate]] = None
+    # reminders: Optional[List[ReminderCreate]] = None
+    reminders: Optional[List[Union[int, ReminderCreate]]] = None
 
 class EventUpdate(BaseModel):
     title: Optional[str]
@@ -863,7 +864,8 @@ class EventUpdate(BaseModel):
 
     # full replace for attendees/reminders when provided
     attendees: Optional[List[AttendeeCreate]] = None
-    reminders: Optional[List[ReminderCreate]] = None
+    # reminders: Optional[List[ReminderCreate]] = None
+    reminders: Optional[List[Union[int, ReminderCreate]]] = None
 
 class EventOut(EventBase):
     id: int
