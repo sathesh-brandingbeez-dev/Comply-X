@@ -9,12 +9,12 @@ from models import (
     CalendarEvent, EventAttendee, EventReminder,
     EventStatusEnum, PriorityEnum, EventTypeEnum,
     Project, ProjectTask, TaskDependency,
-    User, UserRole
+    User, UserRole, ReminderMethodEnum
 )
 from schemas import (
     EventCreate, EventUpdate, EventOut, CalendarStats,
     ProjectCreate, ProjectUpdate, ProjectOut,
-    TaskCreate, TaskUpdate, TaskOut, ReminderMethod
+    TaskCreate, TaskUpdate, TaskOut
 )
 
 # Optional recurrence expansion:
@@ -29,7 +29,12 @@ router = APIRouter(prefix="/api/calendar", tags=["calendar"])
 def _can_manage_calendar(user: User) -> bool:
     # Adjust to your RBAC needs: Admin / Super Admin can manage,
     # Editors/Reviewers can create within their departments, etc.
-    return getattr(user, "role", None) in {UserRole.ADMIN, UserRole.SUPER_ADMIN}
+    # return getattr(user, "role", None) in {UserRole.ADMIN, UserRole.SUPER_ADMIN}
+    allowed_roles = {UserRole.ADMIN}
+    super_admin = getattr(UserRole, "SUPER_ADMIN", None)
+    if super_admin is not None:
+        allowed_roles.add(super_admin)
+    return getattr(user, "role", None) in allowed_roles
 
 def _now_utc() -> datetime:
     return datetime.now(timezone.utc)
@@ -86,19 +91,35 @@ def create_event(payload: EventCreate, db: Session = Depends(get_db), current_us
         for r in payload.reminders:
             if isinstance(r, int):
                 minutes_before = r
-                method = ReminderMethod.EMAIL.value
+                method_enum = ReminderMethodEnum.EMAIL
                 custom_message = None
-            else:
+            elif isinstance(r, dict):
+                if "minutes_before" not in r or "method" not in r:
+                    raise HTTPException(status_code=422, detail="Invalid reminder format")
+                try:
+                    method_enum = ReminderMethodEnum(r["method"])
+                except ValueError:
+                    raise HTTPException(status_code=422, detail="Invalid reminder format")
+                minutes_before = r["minutes_before"]
+                custom_message = r.get("custom_message")
+            elif hasattr(r, "minutes_before") and hasattr(r, "method"):
+                try:
+                    method_enum = ReminderMethodEnum(r.method.value)
+                except ValueError:
+                    raise HTTPException(status_code=422, detail="Invalid reminder format")
                 minutes_before = r.minutes_before
-                method = r.method.value
+                # method = r.method.value
                 custom_message = r.custom_message
+            else:
+                raise HTTPException(status_code=422, detail="Invalid reminder format")
+
             db.add(EventReminder(
                 event_id=event.id,
                 # minutes_before=r.minutes_before,
                 # method=r.method.value,
                 # custom_message=r.custom_message
                 minutes_before=minutes_before,
-                method=method,
+                method=method_enum,
                 custom_message=custom_message
             ))
     db.commit()
