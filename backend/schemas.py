@@ -869,7 +869,14 @@ class EventUpdate(BaseModel):
 
 class EventOut(EventBase):
     id: int
+    title: str
+    start: datetime
+    end: datetime
+    all_day: bool
     organizer_id: int
+    status: str
+    location: Optional[str] = None
+    description: Optional[str] = None
     attendees: List[AttendeeOut] = []
     reminders: List[ReminderOut] = []
     created_at: datetime

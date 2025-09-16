@@ -2,6 +2,7 @@
 
 import os
 import sys
+import traceback
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from sqlalchemy import create_engine, text
@@ -41,7 +42,14 @@ def test_database(db_type):
         return True
         
     except Exception as e:
-        print(f"   ❌ Failed: {e}")
+        print("   ❌ Failed type:", type(e).__name__)
+        # Show DBAPI-level message if present
+        if getattr(e, "orig", None):
+            print("   ↪ DBAPI:", repr(e.orig))
+        # Show SQL statement if present
+        if getattr(e, "statement", None):
+            print("   ↪ SQL:", e.statement)
+        traceback.print_exc(limit=1)
         return False
 
 def main():
