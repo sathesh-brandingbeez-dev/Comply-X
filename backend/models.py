@@ -1,11 +1,13 @@
 from __future__ import annotations
 from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, Text, Enum, Float, Index, Date, JSON, Table
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import relationship, declarative_base
 from database import Base
 from datetime import datetime
 import enum
 from typing import Optional
 from enum import Enum as PyEnum
+
+Base = declarative_base()
 
 try:
     from models import Base  # type: ignore
@@ -938,6 +940,8 @@ class CalendarEvent(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     title = Column(String(200), nullable=False)
+    start = Column(DateTime, nullable=False, index=True)
+    end = Column(DateTime, nullable=False, index=True)
     type = Column(Enum(EventTypeEnum), nullable=False)
     description = Column(Text, nullable=True)
 

@@ -39,6 +39,12 @@ def _can_manage_calendar(user: User) -> bool:
 def _now_utc() -> datetime:
     return datetime.now(timezone.utc)
 
+def _parse_iso(dt: str) -> datetime:
+    # Handle ...Z and offsets; robust without extra deps
+    if dt.endswith("Z"):
+        dt = dt.replace("Z", "+00:00")
+    return datetime.fromisoformat(dt)
+
 # -----------------------
 # Events
 # -----------------------

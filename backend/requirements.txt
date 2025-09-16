@@ -1,7 +1,8 @@
 fastapi==0.116.1
-uvicorn==0.35.0
+uvicorn[standard]==0.30.6
 sqlalchemy==2.0.41
-psycopg2-binary==2.9.10
+SQLAlchemy==2.0.32
+psycopg2-binary==2.9.9
 alembic==1.16.4
 pydantic==2.11.7
 python-jose==3.5.0
@@ -16,3 +17,4 @@ fastapi-mail==1.4.1
 python-dateutil
 tzdata
 openai>=1.40.0
+python-dotenv==1.0.1
