@@ -259,16 +259,31 @@ def update_event(event_id: int, payload: EventUpdate, db: Session = Depends(get_
         for r in payload.reminders or []:
             if isinstance(r, int):
                 minutes_before = r
-                method = ReminderMethod.EMAIL.value
+                method_enum = ReminderMethodEnum.EMAIL
                 custom_message = None
-            else:
+            elif isinstance(r, dict):
+                if "minutes_before" not in r or "method" not in r:
+                    raise HTTPException(status_code=422, detail="Invalid reminder format")
+                try:
+                    method_enum = ReminderMethodEnum(r["method"])
+                except ValueError:
+                    raise HTTPException(status_code=422, detail="Invalid reminder method")
+                minutes_before = r["minutes_before"]
+                custom_message = r.get("custom_message")
+            elif hasattr(r, "minutes_before") and hasattr(r, "method"):
+                try:
+                    method_enum = ReminderMethodEnum(r.method.value)
+                except ValueError:
+                    raise HTTPException(status_code=422, detail="Invalid reminder method")
                 minutes_before = r.minutes_before
-                method = r.method.value
                 custom_message = r.custom_message
+            else:
+                raise HTTPException(status_code=422, detail="Invalid reminder format")
+            
             db.add(EventReminder(
                 event_id=e.id,
                 minutes_before=minutes_before,
-                method=method,
+                method=method_enum,
                 custom_message=custom_message,
             ))
 

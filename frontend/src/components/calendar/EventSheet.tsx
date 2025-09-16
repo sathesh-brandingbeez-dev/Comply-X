@@ -46,17 +46,15 @@ export type EventUpsertInput = {
   type: EventType;
   description?: string;
   location?: string;
-  department_ids: number[];
+  department_ids?: number[];
   priority: Priority;
   status: EventStatus;
   all_day: boolean;
   start_at: string; // ISO
   end_at: string;   // ISO
-  time_zone?: string;
-  attendees_required?: string[];
-  attendees_optional?: string[];
-  // reminders: number[]; // minutes-before
-  reminders: ReminderInput[];
+  tz?: string;
+  attendees?: Array<{ email?: string; user_id?: number; required: boolean }>;
+  reminders?: Array<{ minutes_before: number; method: string; custom_message?: string }>;
 };
 
 type EventFormValues = {
@@ -199,6 +197,12 @@ export default function EventSheet({
       ? values.attendees_optional_csv.split(",").map((s) => s.trim()).filter(Boolean)
       : [];
 
+    // Convert attendee strings to proper attendee objects
+    const attendees = [
+      ...attendees_required.map(email => ({ email, required: true })),
+      ...attendees_optional.map(email => ({ email, required: false }))
+    ];
+
     const payload: EventUpsertInput = {
       ...(initial?.id != null ? { id: String(initial.id) } : {}),
       title: values.title.trim(),
@@ -211,11 +215,9 @@ export default function EventSheet({
       all_day: Boolean(values.all_day),
       start_at: startISO,
       end_at: endISO,
-      time_zone: values.time_zone,
-      attendees_required,
-      attendees_optional,
-      // reminders: values.reminders,
-      reminders: values.reminders.map((m) => ({ minutes_before: m })),
+      tz: values.time_zone || "UTC",
+      attendees,
+      reminders: values.reminders.map((m) => ({ minutes_before: m, method: "Email" })),
     };
 
     if (upsertEvent) {
