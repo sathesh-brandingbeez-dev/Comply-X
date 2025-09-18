@@ -21,7 +21,7 @@ from schemas import (
 from dateutil.rrule import rrulestr
 from dateutil.tz import gettz
 
-router = APIRouter(prefix="/api/calendar", tags=["calendar"])
+router = APIRouter(prefix="/calendar", tags=["calendar"])
 
 # -----------------------
 # Helper / Permissions

@@ -7,12 +7,12 @@ import enum
 from typing import Optional
 from enum import Enum as PyEnum
 
-Base = declarative_base()
+# Base = declarative_base()
 
-try:
-    from models import Base  # type: ignore
-except Exception:
-    from database import Base  # type: ignore
+# try:
+#     from models import Base  # type: ignore
+# except Exception:
+#     from database import Base  # type: ignore
 
 
 class UserRole(str, enum.Enum):
