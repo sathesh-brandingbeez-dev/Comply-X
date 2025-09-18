@@ -1,3 +1,4 @@
+// components/calendar/FiltersBar.tsx
 "use client";
 
 import { useState } from "react";
@@ -36,7 +37,6 @@ const EVENT_TYPES = [
 
 const PRIORITIES = ["Low", "Medium", "High", "Critical"] as const;
 
-// Type guards to narrow string -> our unions (no `any`)
 const isView = (v: string): v is View => ["month", "week", "day", "agenda"].includes(v);
 const isStatus = (v: string): v is Status =>
   ["All", "Upcoming", "In Progress", "Completed", "Overdue"].includes(v);
@@ -49,17 +49,33 @@ export default function FiltersBar({ onChange }: Props) {
   const [mine, setMine] = useState(false);
   const [view, setView] = useState<View>("month");
 
-  const emit = () => onChange({ status_filter: status, types, priority, departments, mine, view });
+  // helper: emit with an override so we never rely on stale state
+  const emit = (overrides?: Partial<{
+    status_filter: Status;
+    types: string[];
+    priority: string[];
+    departments: number[];
+    mine: boolean;
+    view: View;
+  }>) => {
+    onChange({
+      status_filter: overrides?.status_filter ?? status,
+      types: overrides?.types ?? types,
+      priority: overrides?.priority ?? priority,
+      departments: overrides?.departments ?? departments,
+      mine: overrides?.mine ?? mine,
+      view: overrides?.view ?? view,
+    });
+  };
 
   return (
     <div className="flex flex-wrap items-center gap-2">
       <Tabs
         value={view}
         onValueChange={(v) => {
-          if (isView(v)) {
-            setView(v);
-            emit();
-          }
+          if (!isView(v)) return;
+          setView(v);
+          emit({ view: v }); // <-- send the new view immediately
         }}
       >
         <TabsList>
@@ -75,10 +91,9 @@ export default function FiltersBar({ onChange }: Props) {
       <Select
         value={status}
         onValueChange={(v) => {
-          if (isStatus(v)) {
-            setStatus(v);
-            emit();
-          }
+          if (!isStatus(v)) return;
+          setStatus(v);
+          emit({ status_filter: v });
         }}
       >
         <SelectTrigger>
@@ -95,13 +110,9 @@ export default function FiltersBar({ onChange }: Props) {
 
       <Select
         onValueChange={(v) => {
-          // toggle multi-select emulation
-          setTypes((prev) => {
-            const next = prev.includes(v) ? prev.filter((x) => x !== v) : [...prev, v];
-            // emit with the new value immediately to keep UX snappy
-            onChange({ status_filter: status, types: next, priority, departments, mine, view });
-            return next;
-          });
+          const next = types.includes(v) ? types.filter((x) => x !== v) : [...types, v];
+          setTypes(next);
+          emit({ types: next });
         }}
       >
         <SelectTrigger>
@@ -118,11 +129,9 @@ export default function FiltersBar({ onChange }: Props) {
 
       <Select
         onValueChange={(v) => {
-          setPriority((prev) => {
-            const next = prev.includes(v) ? prev.filter((x) => x !== v) : [...prev, v];
-            onChange({ status_filter: status, types, priority: next, departments, mine, view });
-            return next;
-          });
+          const next = priority.includes(v) ? priority.filter((x) => x !== v) : [...priority, v];
+          setPriority(next);
+          emit({ priority: next });
         }}
       >
         <SelectTrigger>
@@ -137,15 +146,12 @@ export default function FiltersBar({ onChange }: Props) {
         </SelectContent>
       </Select>
 
-      {/* dept picker placeholder: integrate your real list */}
       <Select
         onValueChange={(v) => {
           const id = Number(v);
-          setDepartments((prev) => {
-            const next = prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id];
-            onChange({ status_filter: status, types, priority, departments: next, mine, view });
-            return next;
-          });
+          const next = departments.includes(id) ? departments.filter((x) => x !== id) : [...departments, id];
+          setDepartments(next);
+          emit({ departments: next });
         }}
       >
         <SelectTrigger>
@@ -168,7 +174,7 @@ export default function FiltersBar({ onChange }: Props) {
               checked={mine}
               onCheckedChange={(v: boolean) => {
                 setMine(v);
-                emit();
+                emit({ mine: v });
               }}
             />
           </label>
@@ -176,7 +182,8 @@ export default function FiltersBar({ onChange }: Props) {
         <TooltipContent side="bottom">Show only events you organized. (Spec 7.7.1)</TooltipContent>
       </Tooltip>
 
-      <Button className="ml-auto" onClick={emit}>
+      {/* Optional: keep Apply for manual refresh; it's no longer required for correctness */}
+      <Button className="ml-auto" onClick={() => emit()}>
         Apply
       </Button>
     </div>

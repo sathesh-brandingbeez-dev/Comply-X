@@ -5,9 +5,9 @@ const nextConfig = {
   async rewrites() {
     return [
       // forwards /api/* from Next.js -> FastAPI on :8000
-      { source: "/api/:path*", destination: "http://localhost:8000/api/:path*" },
+      { source: "/api/:path*", destination: "http://localhost:8000/api/:path*", },
     ];
   },
 };
 
-export default nextConfig;
+module.exports = nextConfig;
