@@ -85,9 +85,14 @@ from mfa import router as mfa_router
 from document_assignments import router as document_assignments_router
 from questionnaires import router as questionnaires_router
 from fmea_router import router as fmea_router
-from calendar_module import router as calendar_router
-from app.routes.calendar_ai import router as calendar_ai_router
+# from calendar_module import router as calendar_module_router
+# from app.routes.calendar_ai import router as calendar_ai_router
 from calendar_api import router as calendar_api_router
+
+try:
+    from app.routes.calendar_ai import router as calendar_ai_router
+except Exception:
+    calendar_ai_router = None
 
 # ⬇️ import your models Base and engine
 from models import Base
@@ -112,12 +117,14 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
     allow_credentials=False,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
-    allow_headers=[
-        "Accept","Accept-Language","Content-Language","Content-Type","Authorization",
-        "X-Requested-With","Origin","Access-Control-Request-Method","Access-Control-Request-Headers",
-    ],
-    # expose_headers=["*"],
+    # allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
+    allow_methods=["*"],
+    # allow_headers=[
+    #     "Accept","Accept-Language","Content-Language","Content-Type","Authorization",
+    #     "X-Requested-With","Origin","Access-Control-Request-Method","Access-Control-Request-Headers",
+    # ],
+    allow_headers=["*"],
+    expose_headers=["*"],
 )
 
 @app.on_event("startup")
@@ -141,9 +148,13 @@ app.include_router(mfa_router,                  prefix="/api/mfa",              
 app.include_router(document_assignments_router, prefix="/api/document-assignments",  tags=["document-assignments"])
 app.include_router(questionnaires_router,       prefix="/api/questionnaires",        tags=["questionnaires"])
 app.include_router(fmea_router,                 prefix="/api/fmea",                  tags=["fmea"])
-app.include_router(calendar_router,             prefix="/api",                       tags=["calendar"])
-app.include_router(calendar_ai_router,          prefix="/api",                       tags=["calendar-ai"])
+# app.include_router(calendar_module_router,      prefix="/api",                       tags=["calendar"])
+# app.include_router(calendar_ai_router,          prefix="/api",                       tags=["calendar-ai"])
 app.include_router(calendar_api_router)
+
+if calendar_ai_router:
+    # most AI examples use router without a prefix; put it under /api
+    app.include_router(calendar_ai_router,      prefix="/api",                      tags=["calendar-ai"])
 
 # Optional: manual init endpoint if you ever need to click it
 @app.post("/api/dev/init-db", tags=["health"])
