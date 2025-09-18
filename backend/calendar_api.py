@@ -29,6 +29,15 @@ router = APIRouter(prefix="/api/calendar", tags=["calendar"])
 def _now_utc() -> datetime:
     return datetime.now(timezone.utc)
 
+
+def _ensure_aware(dt: Optional[datetime]) -> Optional[datetime]:
+    """Return a timezone-aware datetime, assuming UTC if tzinfo is missing."""
+    if dt is None:
+        return None
+    if dt.tzinfo is None or dt.tzinfo.utcoffset(dt) is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt
+
 def _parse_iso(dt: str) -> datetime:
     # Robustly handle trailing Z and offsets
     if dt.endswith("Z"):
@@ -123,17 +132,25 @@ def list_events(
 
     # status bucketing
     now = _now_utc()
+
     def _in_status(e: CalendarEvent) -> bool:
+        start_at = _ensure_aware(e.start_at)
+        end_at = _ensure_aware(e.end_at)
         if status_filter == "All":
             return True
         if status_filter == "Upcoming":
-            return e.start_at > now and e.status != EventStatusEnum.CANCELLED
+            return bool(start_at and start_at > now and e.status != EventStatusEnum.CANCELLED)
         if status_filter == "In Progress":
-            return e.start_at <= now <= e.end_at and e.status not in (EventStatusEnum.CANCELLED, EventStatusEnum.COMPLETED)
+            return bool(
+                start_at
+                and end_at
+                and start_at <= now <= end_at
+                and e.status not in (EventStatusEnum.CANCELLED, EventStatusEnum.COMPLETED)
+            )
         if status_filter == "Completed":
             return e.status == EventStatusEnum.COMPLETED
         if status_filter == "Overdue":
-            return e.end_at < now and e.status not in (EventStatusEnum.CANCELLED, EventStatusEnum.COMPLETED)
+            return bool(end_at and end_at < now and e.status not in (EventStatusEnum.CANCELLED, EventStatusEnum.COMPLETED))
         return True
 
     events = [e for e in events if _in_status(e)]
@@ -311,10 +328,31 @@ def calendar_stats(db: Session = Depends(get_db), mine: bool = False):
     # If/when you add auth + mine: filter by organizer_id
     events = q.all()
     now = _now_utc()
-    upcoming = sum(1 for e in events if e.start_at > now and e.status != EventStatusEnum.CANCELLED)
-    in_progress = sum(1 for e in events if e.start_at <= now <= e.end_at and e.status not in (EventStatusEnum.CANCELLED, EventStatusEnum.COMPLETED))
+    def _iter_start_end():
+        for event in events:
+            yield event, _ensure_aware(event.start_at), _ensure_aware(event.end_at)
+
+    upcoming = sum(
+        1
+        for event, start_at, _ in _iter_start_end()
+        if start_at and start_at > now and event.status != EventStatusEnum.CANCELLED
+    )
+    in_progress = sum(
+        1
+        for event, start_at, end_at in _iter_start_end()
+        if (
+            start_at
+            and end_at
+            and start_at <= now <= end_at
+            and event.status not in (EventStatusEnum.CANCELLED, EventStatusEnum.COMPLETED)
+        )
+    )
     completed = sum(1 for e in events if e.status == EventStatusEnum.COMPLETED)
-    overdue = sum(1 for e in events if e.end_at < now and e.status not in (EventStatusEnum.CANCELLED, EventStatusEnum.COMPLETED))
+    overdue = sum(
+        1
+        for event, _, end_at in _iter_start_end()
+        if end_at and end_at < now and event.status not in (EventStatusEnum.CANCELLED, EventStatusEnum.COMPLETED)
+    )
 
     def _bucket(items, key):
         d = {}
