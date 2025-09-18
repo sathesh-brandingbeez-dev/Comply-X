@@ -1,4 +1,4 @@
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel, Field, conlist
 
@@ -15,7 +15,7 @@ router = APIRouter(prefix="/calendar/ai", tags=["calendar-ai"])
 # --------- Schemas (router-local) ---------
 
 class EventIn(BaseModel):
-    id: Optional[str] = None
+    id: Optional[Union[str, int]] = None
     title: str
     type: Optional[str] = None
     description: Optional[str] = None

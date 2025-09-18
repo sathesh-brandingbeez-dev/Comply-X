@@ -1,8 +1,27 @@
 import os
-from typing import List, Optional, Dict, Any
 from datetime import datetime
+from pathlib import Path
+from typing import Any, Dict, List, Optional
 
+from dotenv import load_dotenv
 from openai import OpenAI
+
+
+def _prime_env() -> None:
+    """Ensure `.env` files are loaded before we read OpenAI settings."""
+
+    current_path = Path(__file__).resolve()
+    for parent in current_path.parents:
+        candidate = parent / ".env"
+        if candidate.exists():
+            load_dotenv(candidate, override=False)
+
+    # Finally, fall back to the default search so local shells still work.
+    if not os.getenv("OPENAI_API_KEY"):
+        load_dotenv(override=False)
+
+
+_prime_env()
 
 # Configure client (env var: OPENAI_API_KEY)
 _client: Optional[OpenAI] = None
