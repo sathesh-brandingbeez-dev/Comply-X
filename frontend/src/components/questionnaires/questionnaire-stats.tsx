@@ -1,14 +1,16 @@
 'use client';
 
 import { Card } from '@/components/ui/card';
-import { BarChart3, Users, CheckCircle, Clock } from 'lucide-react';
+import { BarChart3, Users, CheckCircle, Clock, Sparkles, ClipboardList } from 'lucide-react';
 
 interface Questionnaire {
   id: number;
   title: string;
   status: 'draft' | 'active' | 'paused' | 'closed' | 'archived';
+  type?: 'assessment' | 'survey' | 'checklist' | 'evaluation';
   responses?: number;
   completion_rate?: number;
+  ai_readiness_score?: number;
 }
 
 interface QuestionnaireStatsProps {
@@ -19,9 +21,16 @@ export function QuestionnaireStats({ questionnaires }: QuestionnaireStatsProps) 
   const totalQuestionnaires = questionnaires.length;
   const activeQuestionnaires = questionnaires.filter(q => q.status === 'active').length;
   const totalResponses = questionnaires.reduce((sum, q) => sum + (q.responses || 0), 0);
-  const averageCompletionRate = questionnaires.length > 0 
-    ? questionnaires.reduce((sum, q) => sum + (q.completion_rate || 0), 0) / questionnaires.length 
+  const averageCompletionRate = questionnaires.length > 0
+    ? questionnaires.reduce((sum, q) => sum + (q.completion_rate || 0), 0) / questionnaires.length
     : 0;
+  const averageAIReadiness = questionnaires.length > 0
+    ? Math.round(
+        questionnaires.reduce((sum, q) => sum + (q.ai_readiness_score || 0), 0) /
+          questionnaires.length
+      )
+    : 0;
+  const checklistCount = questionnaires.filter(q => q.type === 'checklist').length;
 
   const stats = [
     {
@@ -51,11 +60,25 @@ export function QuestionnaireStats({ questionnaires }: QuestionnaireStatsProps) 
       icon: Clock,
       color: 'text-orange-600',
       bgColor: 'bg-orange-100'
+    },
+    {
+      label: 'Avg. AI Readiness',
+      value: `${averageAIReadiness}%`,
+      icon: Sparkles,
+      color: 'text-indigo-600',
+      bgColor: 'bg-indigo-100'
+    },
+    {
+      label: 'Checklists in Library',
+      value: checklistCount,
+      icon: ClipboardList,
+      color: 'text-teal-600',
+      bgColor: 'bg-teal-100'
     }
   ];
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
       {stats.map((stat, index) => {
         const IconComponent = stat.icon;
         return (
