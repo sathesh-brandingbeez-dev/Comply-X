@@ -21,14 +21,7 @@ import {
 } from '@/components/fmea/types'
 import { Card, CardContent } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
-
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'https://comply-x.onrender.com'
-
-const ensureToken = () => {
-  const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null
-  if (!token) throw new Error('Authentication token missing. Please sign in again.')
-  return token
-}
+import { api } from '@/lib/api'
 
 export default function FMEAPage() {
   const [activeTab, setActiveTab] = useState<'overview' | 'worksheet' | 'create'>('overview')
@@ -50,12 +43,8 @@ export default function FMEAPage() {
   const fetchSummary = async () => {
     try {
       setSummaryLoading(true)
-      const token = ensureToken()
-      const response = await fetch(`${API_BASE_URL}/api/fmea/dashboard/summary`, {
-        headers: { Authorization: `Bearer ${token}` }
-      })
-      if (!response.ok) throw new Error('Failed to load dashboard summary')
-      setSummary(await response.json())
+      const data = await api<FMEADashboardSummary>('/fmea/dashboard/summary')
+      setSummary(data)
     } catch (error) {
       console.error(error)
     } finally {
@@ -65,12 +54,8 @@ export default function FMEAPage() {
 
   const fetchTeamOptions = async () => {
     try {
-      const token = ensureToken()
-      const response = await fetch(`${API_BASE_URL}/api/fmea/team-options`, {
-        headers: { Authorization: `Bearer ${token}` }
-      })
-      if (!response.ok) throw new Error('Failed to load team options')
-      setTeamOptions(await response.json())
+      const data = await api<TeamOption[]>('/fmea/team-options')
+      setTeamOptions(data)
     } catch (error) {
       console.error(error)
     }
@@ -79,17 +64,13 @@ export default function FMEAPage() {
   const fetchFmeas = async () => {
     try {
       setFmeasLoading(true)
-      const token = ensureToken()
       const params = new URLSearchParams()
       if (searchValue) params.set('q', searchValue)
       if (typeFilter !== 'All') params.set('fmea_type', typeFilter)
       if (statusFilter !== 'All') params.set('status_', statusFilter)
       params.set('limit', '50')
-      const response = await fetch(`${API_BASE_URL}/api/fmea?${params.toString()}`, {
-        headers: { Authorization: `Bearer ${token}` }
-      })
-      if (!response.ok) throw new Error('Failed to load FMEA studies')
-      const data = (await response.json()) as FMEARecord[]
+      const query = params.toString()
+      const data = await api<FMEARecord[]>(`/fmea${query ? `?${query}` : ''}`)
       setFmeas(data)
       if (data.length) {
         if (!selectedFMEA) {
@@ -111,15 +92,12 @@ export default function FMEAPage() {
   const fetchWorksheet = async (fmeaId: number) => {
     try {
       setWorksheetLoading(true)
-      const token = ensureToken()
-      const [itemsResponse, actionsResponse] = await Promise.all([
-        fetch(`${API_BASE_URL}/api/fmea/${fmeaId}/items`, { headers: { Authorization: `Bearer ${token}` } }),
-        fetch(`${API_BASE_URL}/api/fmea/${fmeaId}/actions`, { headers: { Authorization: `Bearer ${token}` } })
+      const [items, actions] = await Promise.all([
+        api<FMEAItemRecord[]>(`/fmea/${fmeaId}/items`),
+        api<FMEAActionRecord[]>(`/fmea/${fmeaId}/actions`)
       ])
-      if (!itemsResponse.ok) throw new Error('Failed to load worksheet items')
-      if (!actionsResponse.ok) throw new Error('Failed to load actions')
-      setWorksheetItems((await itemsResponse.json()) as FMEAItemRecord[])
-      setWorksheetActions((await actionsResponse.json()) as FMEAActionRecord[])
+      setWorksheetItems(items)
+      setWorksheetActions(actions)
     } catch (error) {
       console.error(error)
     } finally {
@@ -239,7 +217,6 @@ export default function FMEAPage() {
                   </CardContent>
                 </Card>
                 <FMEAWorksheet
-                  apiBaseUrl={API_BASE_URL}
                   fmea={selectedFMEA}
                   items={worksheetItems}
                   actions={worksheetActions}
@@ -260,7 +237,6 @@ export default function FMEAPage() {
 
           <TabsContent value="create" className="space-y-6">
             <FMEACreationWizard
-              apiBaseUrl={API_BASE_URL}
               teamOptions={teamOptions}
               onCreated={handleFmeaCreated}
               initialValues={wizardPrefill}
@@ -271,7 +247,6 @@ export default function FMEAPage() {
       <TemplateImportDialog
         open={templateDialogOpen}
         onOpenChange={setTemplateDialogOpen}
-        apiBaseUrl={API_BASE_URL}
         onApplyTemplate={handleApplyTemplate}
       />
     </DashboardLayout>

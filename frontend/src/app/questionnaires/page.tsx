@@ -261,23 +261,21 @@ export default function QuestionnairePage() {
                     Create Questionnaire
                   </Button>
                 </DialogTrigger>
-                <DialogContent className="max-w-5xl max-h-[85vh] overflow-hidden p-0">
-                  <div className="flex h-full flex-col">
-                    <DialogHeader className="px-6 py-4 border-b">
-                      <DialogTitle className="text-left">
-                        {selectedQuestionnaire ? 'Edit Questionnaire' : 'Create New Questionnaire'}
-                      </DialogTitle>
-                    </DialogHeader>
-                    <div className="flex-1 overflow-y-auto px-6 pb-6">
-                      <QuestionnaireBuilder
-                        questionnaire={selectedQuestionnaire}
-                        onSave={() => setIsBuilderOpen(false)}
-                        onCancel={() => setIsBuilderOpen(false)}
-                      />
-                    </div>
-                  </div>
-                </DialogContent>
-              </Dialog>
+
+                <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>
+                {selectedQuestionnaire ? 'Edit Questionnaire' : 'Create New Questionnaire'}
+              </DialogTitle>
+            </DialogHeader>
+            <QuestionnaireBuilder 
+              questionnaire={selectedQuestionnaire}
+              onSave={() => setIsBuilderOpen(false)}
+              onCancel={() => setIsBuilderOpen(false)}
+            />
+          </DialogContent>
+        </Dialog>
+
             </div>
           </div>
           

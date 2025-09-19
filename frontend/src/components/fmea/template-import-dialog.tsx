@@ -17,15 +17,15 @@ import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Loader2, Sparkles } from 'lucide-react'
+import { api } from '@/lib/api'
 
 interface TemplateImportDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
-  apiBaseUrl: string
   onApplyTemplate: (suggestion: TemplateSuggestion) => void
 }
 
-export function TemplateImportDialog({ open, onOpenChange, apiBaseUrl, onApplyTemplate }: TemplateImportDialogProps) {
+export function TemplateImportDialog({ open, onOpenChange, onApplyTemplate }: TemplateImportDialogProps) {
   const [industry, setIndustry] = useState('Manufacturing')
   const [processType, setProcessType] = useState('Process FMEA (PFMEA)')
   const [description, setDescription] = useState('')
@@ -34,22 +34,11 @@ export function TemplateImportDialog({ open, onOpenChange, apiBaseUrl, onApplyTe
   const [suggestions, setSuggestions] = useState<TemplateSuggestion[]>([])
   const [notes, setNotes] = useState<string[]>([])
 
-  const ensureToken = () => {
-    const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null
-    if (!token) throw new Error('Authentication token missing. Please sign in again.')
-    return token
-  }
-
   const fetchSuggestions = async () => {
     try {
       setLoading(true)
-      const token = ensureToken()
-      const response = await fetch(`${apiBaseUrl}/api/fmea/ai/template-suggestions`, {
+      const data = await api<{ templates?: TemplateSuggestion[]; notes?: string[] }>('/fmea/ai/template-suggestions', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`
-        },
         body: JSON.stringify({
           industry,
           process_type: processType,
@@ -60,11 +49,6 @@ export function TemplateImportDialog({ open, onOpenChange, apiBaseUrl, onApplyTe
             .filter(Boolean)
         })
       })
-      if (!response.ok) {
-        const detail = await response.json().catch(() => ({}))
-        throw new Error(detail?.detail || 'Unable to fetch AI templates')
-      }
-      const data = await response.json()
       setSuggestions(data.templates || [])
       setNotes(data.notes || [])
     } catch (error) {
