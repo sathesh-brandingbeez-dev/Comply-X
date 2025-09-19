@@ -152,7 +152,7 @@ app.include_router(organization_router,         prefix="/api/organization",     
 app.include_router(mfa_router,                  prefix="/api/mfa",                   tags=["mfa"])
 app.include_router(document_assignments_router, prefix="/api/document-assignments",  tags=["document-assignments"])
 app.include_router(questionnaires_router,       prefix="/api/questionnaires",        tags=["questionnaires"])
-app.include_router(fmea_router,                 prefix="/api/fmea",                  tags=["fmea"])
+app.include_router(fmea_router,                 prefix="/api",                       tags=["fmea"])
 # app.include_router(calendar_module_router,      prefix="/api",                       tags=["calendar"])
 # app.include_router(calendar_ai_router,          prefix="/api",                       tags=["calendar-ai"])
 app.include_router(calendar_api_router)
