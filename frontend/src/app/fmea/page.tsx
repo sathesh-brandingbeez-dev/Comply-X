@@ -1,0 +1,279 @@
+"use client"
+
+import { useEffect, useMemo, useState } from 'react'
+import { DashboardLayout } from '@/components/layout/dashboard-layout'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { FMEADashboardSummaryCards } from '@/components/fmea/dashboard-summary'
+import { FMEAList } from '@/components/fmea/fmea-list'
+import { FMEACreationWizard } from '@/components/fmea/fmea-wizard'
+import { FMEAWorksheet } from '@/components/fmea/fmea-worksheet'
+import { TemplateImportDialog } from '@/components/fmea/template-import-dialog'
+import {
+  FMEARecord,
+  FMEADashboardSummary,
+  FMEAItemRecord,
+  FMEAActionRecord,
+  TeamOption,
+  TemplateSuggestion,
+  FMEAInitialValues,
+  FMEAStatus,
+  FMEAType
+} from '@/components/fmea/types'
+import { Card, CardContent } from '@/components/ui/card'
+import { Skeleton } from '@/components/ui/skeleton'
+
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'https://comply-x.onrender.com'
+
+const ensureToken = () => {
+  const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null
+  if (!token) throw new Error('Authentication token missing. Please sign in again.')
+  return token
+}
+
+export default function FMEAPage() {
+  const [activeTab, setActiveTab] = useState<'overview' | 'worksheet' | 'create'>('overview')
+  const [summary, setSummary] = useState<FMEADashboardSummary | undefined>()
+  const [summaryLoading, setSummaryLoading] = useState(false)
+  const [fmeas, setFmeas] = useState<FMEARecord[]>([])
+  const [fmeasLoading, setFmeasLoading] = useState(false)
+  const [searchValue, setSearchValue] = useState('')
+  const [typeFilter, setTypeFilter] = useState<FMEAType | 'All'>('All')
+  const [statusFilter, setStatusFilter] = useState<FMEAStatus | 'All'>('All')
+  const [selectedFMEA, setSelectedFMEA] = useState<FMEARecord | null>(null)
+  const [worksheetItems, setWorksheetItems] = useState<FMEAItemRecord[]>([])
+  const [worksheetActions, setWorksheetActions] = useState<FMEAActionRecord[]>([])
+  const [worksheetLoading, setWorksheetLoading] = useState(false)
+  const [teamOptions, setTeamOptions] = useState<TeamOption[]>([])
+  const [templateDialogOpen, setTemplateDialogOpen] = useState(false)
+  const [wizardPrefill, setWizardPrefill] = useState<FMEAInitialValues | undefined>(undefined)
+
+  const fetchSummary = async () => {
+    try {
+      setSummaryLoading(true)
+      const token = ensureToken()
+      const response = await fetch(`${API_BASE_URL}/api/fmea/dashboard/summary`, {
+        headers: { Authorization: `Bearer ${token}` }
+      })
+      if (!response.ok) throw new Error('Failed to load dashboard summary')
+      setSummary(await response.json())
+    } catch (error) {
+      console.error(error)
+    } finally {
+      setSummaryLoading(false)
+    }
+  }
+
+  const fetchTeamOptions = async () => {
+    try {
+      const token = ensureToken()
+      const response = await fetch(`${API_BASE_URL}/api/fmea/team-options`, {
+        headers: { Authorization: `Bearer ${token}` }
+      })
+      if (!response.ok) throw new Error('Failed to load team options')
+      setTeamOptions(await response.json())
+    } catch (error) {
+      console.error(error)
+    }
+  }
+
+  const fetchFmeas = async () => {
+    try {
+      setFmeasLoading(true)
+      const token = ensureToken()
+      const params = new URLSearchParams()
+      if (searchValue) params.set('q', searchValue)
+      if (typeFilter !== 'All') params.set('fmea_type', typeFilter)
+      if (statusFilter !== 'All') params.set('status_', statusFilter)
+      params.set('limit', '50')
+      const response = await fetch(`${API_BASE_URL}/api/fmea?${params.toString()}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      })
+      if (!response.ok) throw new Error('Failed to load FMEA studies')
+      const data = (await response.json()) as FMEARecord[]
+      setFmeas(data)
+      if (data.length) {
+        if (!selectedFMEA) {
+          setSelectedFMEA(data[0])
+        } else {
+          const updated = data.find((record) => record.id === selectedFMEA.id)
+          if (updated) setSelectedFMEA(updated)
+        }
+      } else {
+        setSelectedFMEA(null)
+      }
+    } catch (error) {
+      console.error(error)
+    } finally {
+      setFmeasLoading(false)
+    }
+  }
+
+  const fetchWorksheet = async (fmeaId: number) => {
+    try {
+      setWorksheetLoading(true)
+      const token = ensureToken()
+      const [itemsResponse, actionsResponse] = await Promise.all([
+        fetch(`${API_BASE_URL}/api/fmea/${fmeaId}/items`, { headers: { Authorization: `Bearer ${token}` } }),
+        fetch(`${API_BASE_URL}/api/fmea/${fmeaId}/actions`, { headers: { Authorization: `Bearer ${token}` } })
+      ])
+      if (!itemsResponse.ok) throw new Error('Failed to load worksheet items')
+      if (!actionsResponse.ok) throw new Error('Failed to load actions')
+      setWorksheetItems((await itemsResponse.json()) as FMEAItemRecord[])
+      setWorksheetActions((await actionsResponse.json()) as FMEAActionRecord[])
+    } catch (error) {
+      console.error(error)
+    } finally {
+      setWorksheetLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    try {
+      fetchSummary()
+      fetchTeamOptions()
+    } catch (error) {
+      console.error(error)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  useEffect(() => {
+    fetchFmeas()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchValue, typeFilter, statusFilter])
+
+  useEffect(() => {
+    if (selectedFMEA) {
+      fetchWorksheet(selectedFMEA.id)
+    } else {
+      setWorksheetItems([])
+      setWorksheetActions([])
+    }
+  }, [selectedFMEA])
+
+  const handleApplyTemplate = (suggestion: TemplateSuggestion) => {
+    setWizardPrefill({
+      title: suggestion.name,
+      fmea_type: suggestion.focus.includes('FMEA') ? (suggestion.focus as FMEAType) : undefined,
+      description: suggestion.description,
+      scope: suggestion.description,
+      assumptions: suggestion.recommended_controls?.join('\n') || undefined
+    })
+    setActiveTab('create')
+  }
+
+  const handleFmeaCreated = (record: FMEARecord) => {
+    setFmeas((prev) => [record, ...prev])
+    setSelectedFMEA(record)
+    setActiveTab('worksheet')
+    fetchSummary()
+  }
+
+  const selectedTeamMembers = useMemo(() => {
+    if (!selectedFMEA) return []
+    return selectedFMEA.team_members.map((member) => teamOptions.find((option) => option.id === member.user_id)?.full_name || `User ${member.user_id}`)
+  }, [selectedFMEA, teamOptions])
+
+  return (
+    <DashboardLayout>
+      <div className="space-y-6 p-4 sm:p-6">
+        <div className="flex flex-col gap-2">
+          <h1 className="text-2xl font-bold text-gray-900">Failure Mode Error Analysis</h1>
+          <p className="text-sm text-muted-foreground">
+            Configure, execute and monitor FMEA studies with AI-guided insights.
+          </p>
+        </div>
+
+        <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as typeof activeTab)} className="space-y-6">
+          <TabsList className="w-full justify-start bg-emerald-50/60">
+            <TabsTrigger value="overview">Dashboard</TabsTrigger>
+            <TabsTrigger value="worksheet" disabled={!selectedFMEA}>
+              Worksheet
+            </TabsTrigger>
+            <TabsTrigger value="create">Create FMEA</TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="overview" className="space-y-6">
+            <FMEADashboardSummaryCards summary={summary} loading={summaryLoading} />
+            <FMEAList
+              fmeas={fmeas}
+              loading={fmeasLoading}
+              searchValue={searchValue}
+              fmeaTypeFilter={typeFilter}
+              statusFilter={statusFilter}
+              onSearchChange={setSearchValue}
+              onTypeChange={setTypeFilter}
+              onStatusChange={setStatusFilter}
+              onSelect={(record) => {
+                setSelectedFMEA(record)
+                setActiveTab('worksheet')
+              }}
+              onCreateClick={() => setActiveTab('create')}
+              onImportClick={() => setTemplateDialogOpen(true)}
+            />
+          </TabsContent>
+
+          <TabsContent value="worksheet" className="space-y-6">
+            {selectedFMEA ? (
+              <>
+                <Card className="border-green-100 bg-emerald-50/40 shadow-sm">
+                  <CardContent className="grid gap-4 p-4 md:grid-cols-2">
+                    <div>
+                      <h2 className="text-lg font-semibold text-gray-900">{selectedFMEA.title}</h2>
+                      <p className="text-sm text-muted-foreground">{selectedFMEA.process_or_product_name}</p>
+                      <div className="mt-2 flex flex-wrap gap-2 text-xs text-muted-foreground">
+                        <span>Type: {selectedFMEA.fmea_type}</span>
+                        <span>Status: {selectedFMEA.status}</span>
+                        <span>Review: {new Date(selectedFMEA.review_date).toLocaleDateString()}</span>
+                      </div>
+                    </div>
+                    <div className="space-y-2 text-sm text-muted-foreground">
+                      <div>
+                        <span className="font-semibold text-gray-900">Team Lead:</span> {selectedTeamMembers[0] || `User ${selectedFMEA.team_lead_id}`}
+                      </div>
+                      <div>
+                        <span className="font-semibold text-gray-900">Team:</span>{' '}
+                        {selectedTeamMembers.length > 1 ? selectedTeamMembers.slice(1).join(', ') : 'Configure members in creation wizard.'}
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+                <FMEAWorksheet
+                  apiBaseUrl={API_BASE_URL}
+                  fmea={selectedFMEA}
+                  items={worksheetItems}
+                  actions={worksheetActions}
+                  teamOptions={teamOptions}
+                  loading={worksheetLoading}
+                  onRefresh={() => fetchWorksheet(selectedFMEA.id)}
+                />
+              </>
+            ) : (
+              <Card>
+                <CardContent className="flex h-40 flex-col items-center justify-center gap-2 text-center">
+                  <Skeleton className="h-8 w-1/3" />
+                  <p className="text-sm text-muted-foreground">Select or create a study from the dashboard to begin analysis.</p>
+                </CardContent>
+              </Card>
+            )}
+          </TabsContent>
+
+          <TabsContent value="create" className="space-y-6">
+            <FMEACreationWizard
+              apiBaseUrl={API_BASE_URL}
+              teamOptions={teamOptions}
+              onCreated={handleFmeaCreated}
+              initialValues={wizardPrefill}
+            />
+          </TabsContent>
+        </Tabs>
+      </div>
+      <TemplateImportDialog
+        open={templateDialogOpen}
+        onOpenChange={setTemplateDialogOpen}
+        apiBaseUrl={API_BASE_URL}
+        onApplyTemplate={handleApplyTemplate}
+      />
+    </DashboardLayout>
+  )
+}

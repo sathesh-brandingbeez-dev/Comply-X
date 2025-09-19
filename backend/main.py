@@ -94,6 +94,11 @@ try:
 except Exception:
     calendar_ai_router = None
 
+try:
+    from app.routes.fmea_ai import router as fmea_ai_router
+except Exception:
+    fmea_ai_router = None
+
 # ⬇️ import your models Base and engine
 from models import Base
 from database import engine
@@ -155,6 +160,9 @@ app.include_router(calendar_api_router)
 if calendar_ai_router:
     # most AI examples use router without a prefix; put it under /api
     app.include_router(calendar_ai_router,      prefix="/api",                      tags=["calendar-ai"])
+
+if fmea_ai_router:
+    app.include_router(fmea_ai_router,          prefix="/api",                      tags=["fmea-ai"])
 
 # Optional: manual init endpoint if you ever need to click it
 @app.post("/api/dev/init-db", tags=["health"])

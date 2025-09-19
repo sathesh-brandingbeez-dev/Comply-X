@@ -7,11 +7,12 @@ from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 from sqlalchemy import func, or_, and_
+from pydantic import BaseModel
 
 from database import get_db
 from models import (
     FMEA, FMEAItem, FMEATeamMember, FMEAAction,
-    FMEAType, FMEAStatus, ActionStatus
+    FMEAType, FMEAStatus, ActionStatus, User
 )
 from schemas import (
     FMEACreate, FMEAUpdate, FMEAOut,
@@ -36,6 +37,16 @@ except Exception:
         return _inner
 
 router = APIRouter(prefix="/fmea", tags=["Failure Mode Error Analysis"])
+
+
+# ===== Schemas =====
+
+
+class FMEATeamUser(BaseModel):
+    id: int
+    full_name: str
+    department: Optional[str] = None
+    position: Optional[str] = None
 
 
 # ===== Utils =====
@@ -64,6 +75,31 @@ def _refresh_fmea_aggregates(db: Session, fmea: FMEA) -> None:
     fmea.actions_count = int(actions_count)
     db.add(fmea)
     db.flush()
+
+
+# ===== Reference Data =====
+
+
+@router.get("/team-options", response_model=list[FMEATeamUser])
+def list_team_options(
+    db: Session = Depends(get_db),
+    _=Depends(require_roles("Reader", "Editor", "Reviewer", "Admin", "Super Admin")),
+) -> list[FMEATeamUser]:
+    users = (
+        db.query(User)
+        .filter(User.is_active.is_(True))
+        .order_by(User.first_name.asc(), User.last_name.asc())
+        .all()
+    )
+    return [
+        FMEATeamUser(
+            id=user.id,
+            full_name=f"{user.first_name} {user.last_name}",
+            department=user.department,
+            position=user.position,
+        )
+        for user in users
+    ]
 
 
 # ===== FMEA CRUD =====

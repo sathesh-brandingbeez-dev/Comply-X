@@ -140,7 +140,14 @@ export function DashboardSidebar({ className, isOpen = false, onClose }: Dashboa
   )
 
   const handleItemClick = (href: string, title: string) => {
-    if (href === '/dashboard' || href === '/documents' || href === '/questionnaires' || href === '/settings' || href === '/calendar') {
+    if (
+      href === '/dashboard' ||
+      href === '/documents' ||
+      href === '/questionnaires' ||
+      href === '/settings' ||
+      href === '/calendar' ||
+      href === '/fmea'
+    ) {
       // Navigate to implemented pages
       router.push(href)
     } else {
