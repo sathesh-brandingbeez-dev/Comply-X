@@ -197,7 +197,28 @@
 
 // src/lib/api.ts
 
-const RAW_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8000/api";
+function resolveApiBase(): string {
+  const envBase = process.env.NEXT_PUBLIC_API_BASE?.trim();
+  if (envBase) return envBase;
+
+  if (typeof window !== "undefined") {
+    // When running in the browser default to hitting the Next.js rewrite at /api/*.
+    return "/api";
+  }
+
+  const siteUrl =
+    process.env.NEXT_PUBLIC_SITE_URL?.trim() || process.env.SITE_URL?.trim();
+  if (siteUrl) {
+    const normalized = siteUrl.startsWith("http")
+      ? siteUrl
+      : `https://${siteUrl}`;
+    return `${normalized.replace(/\/+$/, "")}/api`;
+  }
+
+  return "http://localhost:8000/api";
+}
+
+const RAW_BASE = resolveApiBase();
 export const API_BASE = RAW_BASE.replace(/\/+$/, "");
 
 /** Join base + tail without losing '/api' */

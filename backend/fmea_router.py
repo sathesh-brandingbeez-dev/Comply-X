@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime
-from typing import Optional, List
+from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
@@ -95,7 +95,7 @@ def list_team_options(
         FMEATeamUser(
             id=user.id,
             full_name=f"{user.first_name} {user.last_name}",
-            department=user.department,
+            department=(user.user_department.name if user.user_department else None),
             position=user.position,
         )
         for user in users
