@@ -33,6 +33,54 @@ security = HTTPBearer()
 
 router = APIRouter()
 
+
+def _normalize_role_name(role: str) -> str:
+    """Normalize role labels to a consistent snake_case key."""
+    return role.strip().lower().replace("-", "_").replace(" ", "_")
+
+
+_ROLE_ALIAS_MAP: dict[str, set[UserRole]] = {}
+
+for _role in UserRole:
+    for _alias in {
+        _role.value,
+        _role.name,
+        _role.name.lower(),
+        _role.value.replace("_", " "),
+        _role.name.replace("_", " "),
+    }:
+        _ROLE_ALIAS_MAP.setdefault(_normalize_role_name(_alias), set()).add(_role)
+
+for _alias, _roles in {
+    "reader": {
+        UserRole.VIEWER,
+        UserRole.EMPLOYEE,
+        UserRole.AUDITOR,
+        UserRole.MANAGER,
+        UserRole.ADMIN,
+        UserRole.SUPER_ADMIN,
+    },
+    "editor": {
+        UserRole.MANAGER,
+        UserRole.AUDITOR,
+        UserRole.ADMIN,
+        UserRole.SUPER_ADMIN,
+    },
+    "reviewer": {
+        UserRole.AUDITOR,
+        UserRole.ADMIN,
+        UserRole.SUPER_ADMIN,
+    },
+    "admin": {
+        UserRole.ADMIN,
+        UserRole.SUPER_ADMIN,
+    },
+    "super admin": {
+        UserRole.SUPER_ADMIN,
+    },
+}.items():
+    _ROLE_ALIAS_MAP.setdefault(_normalize_role_name(_alias), set()).update(_roles)
+
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     return pwd_context.verify(plain_password, hashed_password)
 
@@ -106,6 +154,23 @@ def require_role(required_roles: list[UserRole]):
             )
         return current_user
     return role_checker
+
+
+def require_roles(*roles: str):
+    """Accepts human friendly role labels and resolves them to system roles."""
+    resolved_roles: set[UserRole] = set()
+
+    for role_name in roles:
+        if not role_name:
+            continue
+        normalized = _normalize_role_name(role_name)
+        resolved_roles.update(_ROLE_ALIAS_MAP.get(normalized, set()))
+
+    if not resolved_roles:
+        resolved_roles = set(UserRole)
+
+    sorted_roles = sorted(resolved_roles, key=lambda role: role.value)
+    return require_role(sorted_roles)
 
 def generate_reset_token() -> str:
     """Generate a secure random token for password reset"""
