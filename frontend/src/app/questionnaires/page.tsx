@@ -261,17 +261,19 @@ export default function QuestionnairePage() {
                     Create Questionnaire
                   </Button>
                 </DialogTrigger>
-                <DialogContent className="max-w-5xl">
-                  <DialogHeader>
-                    <DialogTitle>{selectedQuestionnaire ? 'Edit Questionnaire' : 'Create New Questionnaire'}</DialogTitle>
-                  </DialogHeader>
-                  <QuestionnaireBuilder
-                    questionnaire={selectedQuestionnaire}
-                    onSave={() => setIsBuilderOpen(false)}
-                    onCancel={() => setIsBuilderOpen(false)}
-                  />
-                </DialogContent>
-              </Dialog>
+                <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>
+                {selectedQuestionnaire ? 'Edit Questionnaire' : 'Create New Questionnaire'}
+              </DialogTitle>
+            </DialogHeader>
+            <QuestionnaireBuilder 
+              questionnaire={selectedQuestionnaire}
+              onSave={() => setIsBuilderOpen(false)}
+              onCancel={() => setIsBuilderOpen(false)}
+            />
+          </DialogContent>
+        </Dialog>
             </div>
           </div>
 
