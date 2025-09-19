@@ -147,9 +147,17 @@ export default function FMEAPage() {
     fetchSummary()
   }
 
+  const teamLeadName = useMemo(() => {
+    if (!selectedFMEA) return null
+    const lead = teamOptions.find((option) => option.id === selectedFMEA.team_lead_id)
+    return lead?.full_name ?? `User ${selectedFMEA.team_lead_id}`
+  }, [selectedFMEA, teamOptions])
+
   const selectedTeamMembers = useMemo(() => {
     if (!selectedFMEA) return []
-    return selectedFMEA.team_members.map((member) => teamOptions.find((option) => option.id === member.user_id)?.full_name || `User ${member.user_id}`)
+    return selectedFMEA.team_members
+      .filter((member) => member.user_id !== selectedFMEA.team_lead_id)
+      .map((member) => teamOptions.find((option) => option.id === member.user_id)?.full_name || `User ${member.user_id}`)
   }, [selectedFMEA, teamOptions])
 
   return (
@@ -207,11 +215,11 @@ export default function FMEAPage() {
                     </div>
                     <div className="space-y-2 text-sm text-muted-foreground">
                       <div>
-                        <span className="font-semibold text-gray-900">Team Lead:</span> {selectedTeamMembers[0] || `User ${selectedFMEA.team_lead_id}`}
+                        <span className="font-semibold text-gray-900">Team Lead:</span> {teamLeadName}
                       </div>
                       <div>
                         <span className="font-semibold text-gray-900">Team:</span>{' '}
-                        {selectedTeamMembers.length > 1 ? selectedTeamMembers.slice(1).join(', ') : 'Configure members in creation wizard.'}
+                        {selectedTeamMembers.length > 0 ? selectedTeamMembers.join(', ') : 'Configure members in creation wizard.'}
                       </div>
                     </div>
                   </CardContent>
