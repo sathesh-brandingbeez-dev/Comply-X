@@ -19,6 +19,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
 import { Loader2, Sparkles, UsersRound } from 'lucide-react'
+import { api } from '@/lib/api'
 
 const FMEA_TYPES = [
   'Process FMEA (PFMEA)',
@@ -29,7 +30,6 @@ const FMEA_TYPES = [
 ] as const
 
 interface WizardProps {
-  apiBaseUrl: string
   teamOptions: TeamOption[]
   onCreated: (record: FMEARecord) => void
   initialValues?: FMEAInitialValues
@@ -69,7 +69,7 @@ const steps = [
   }
 ]
 
-export function FMEACreationWizard({ apiBaseUrl, teamOptions, onCreated, initialValues }: WizardProps) {
+export function FMEACreationWizard({ teamOptions, onCreated, initialValues }: WizardProps) {
   const [stepIndex, setStepIndex] = useState(0)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [departmentInput, setDepartmentInput] = useState('')
@@ -152,31 +152,14 @@ export function FMEACreationWizard({ apiBaseUrl, teamOptions, onCreated, initial
     setMemberRoles((prev) => ({ ...prev, [id]: role }))
   }
 
-  const ensureToken = () => {
-    const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null
-    if (!token) {
-      throw new Error('Authentication token missing. Please sign in again.')
-    }
-    return token
-  }
-
   const callAiEndpoint = async <T,>(path: string, payload: Record<string, unknown>): Promise<T | null> => {
     try {
       setAiLoading(path)
-      const token = ensureToken()
-      const response = await fetch(`${apiBaseUrl}${path}`, {
+      const data = await api<T>(path, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`
-        },
         body: JSON.stringify(payload)
       })
-      if (!response.ok) {
-        const detail = await response.json().catch(() => ({}))
-        throw new Error(detail?.detail || 'AI service is unavailable')
-      }
-      return (await response.json()) as T
+      return data
     } catch (error) {
       console.error('AI request failed', error)
       if (error instanceof Error) {
@@ -189,7 +172,7 @@ export function FMEACreationWizard({ apiBaseUrl, teamOptions, onCreated, initial
   }
 
   const handleTeamSuggestions = async () => {
-    const data = await callAiEndpoint<TeamAIResponse>('/api/fmea/ai/team-suggestions', {
+    const data = await callAiEndpoint<TeamAIResponse>('/fmea/ai/team-suggestions', {
       departments: formData.departments,
       required_skills: formData.description ? formData.description.split(',').map((entry) => entry.trim()).filter(Boolean) : [],
       existing_team: selectedMembers.map((id) => id.toString())
@@ -200,7 +183,7 @@ export function FMEACreationWizard({ apiBaseUrl, teamOptions, onCreated, initial
   }
 
   const handleScaleRecommendations = async () => {
-    const data = await callAiEndpoint<ScaleAIResponse>('/api/fmea/ai/scale-recommendations', {
+    const data = await callAiEndpoint<ScaleAIResponse>('/fmea/ai/scale-recommendations', {
       industry: formData.departments[0] || 'General Manufacturing',
       standard: formData.standard,
       risk_focus: formData.scope || formData.description
@@ -215,7 +198,7 @@ export function FMEACreationWizard({ apiBaseUrl, teamOptions, onCreated, initial
       alert('Add a short process description to get AI scope support.')
       return
     }
-    const data = await callAiEndpoint<ScopeAIResponse>('/api/fmea/ai/scope-assist', {
+    const data = await callAiEndpoint<ScopeAIResponse>('/fmea/ai/scope-assist', {
       process_description: formData.description,
       objectives: [formData.process_or_product_name],
       assumptions: formData.assumptions ? formData.assumptions.split('\n') : []
@@ -275,13 +258,8 @@ export function FMEACreationWizard({ apiBaseUrl, teamOptions, onCreated, initial
     if (!validateStep()) return
     try {
       setIsSubmitting(true)
-      const token = ensureToken()
-      const response = await fetch(`${apiBaseUrl}/api/fmea`, {
+      const record = await api<FMEARecord>('/fmea', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`
-        },
         body: JSON.stringify({
           title: formData.title,
           fmea_type: formData.fmea_type,
@@ -305,11 +283,6 @@ export function FMEACreationWizard({ apiBaseUrl, teamOptions, onCreated, initial
           }))
         })
       })
-      if (!response.ok) {
-        const detail = await response.json().catch(() => ({}))
-        throw new Error(detail?.detail || 'Unable to create FMEA study')
-      }
-      const record = (await response.json()) as FMEARecord
       onCreated(record)
       setStepIndex(0)
       setFormData((prev) => ({
@@ -478,10 +451,10 @@ export function FMEACreationWizard({ apiBaseUrl, teamOptions, onCreated, initial
                 type="button"
                 variant="secondary"
                 onClick={handleScopeAssist}
-                disabled={aiLoading === '/api/fmea/ai/scope-assist'}
+                disabled={aiLoading === '/fmea/ai/scope-assist'}
                 className="mt-2 flex h-fit items-center gap-2 border border-emerald-200 bg-emerald-50 text-emerald-700"
               >
-                {aiLoading === '/api/fmea/ai/scope-assist' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+                {aiLoading === '/fmea/ai/scope-assist' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
                 AI Scope Assist
               </Button>
             </div>
@@ -587,10 +560,10 @@ export function FMEACreationWizard({ apiBaseUrl, teamOptions, onCreated, initial
                   type="button"
                   variant="secondary"
                   onClick={handleScaleRecommendations}
-                  disabled={aiLoading === '/api/fmea/ai/scale-recommendations'}
+                  disabled={aiLoading === '/fmea/ai/scale-recommendations'}
                   className="flex items-center gap-2 border border-emerald-200 bg-emerald-50 text-emerald-700"
                 >
-                  {aiLoading === '/api/fmea/ai/scale-recommendations' ? (
+                  {aiLoading === '/fmea/ai/scale-recommendations' ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
                   ) : (
                     <Sparkles className="h-4 w-4" />
@@ -663,9 +636,9 @@ export function FMEACreationWizard({ apiBaseUrl, teamOptions, onCreated, initial
                   variant="secondary"
                   className="flex items-center gap-2 border border-emerald-200 bg-emerald-50 text-emerald-700"
                   onClick={handleTeamSuggestions}
-                  disabled={aiLoading === '/api/fmea/ai/team-suggestions'}
+                  disabled={aiLoading === '/fmea/ai/team-suggestions'}
                 >
-                  {aiLoading === '/api/fmea/ai/team-suggestions' ? (
+                  {aiLoading === '/fmea/ai/team-suggestions' ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
                   ) : (
                     <UsersRound className="h-4 w-4" />

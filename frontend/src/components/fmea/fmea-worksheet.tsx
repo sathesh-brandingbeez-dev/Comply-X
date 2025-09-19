@@ -36,6 +36,7 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Skeleton } from '@/components/ui/skeleton'
+import { api } from '@/lib/api'
 import {
   ArrowRightCircle,
   BarChart3,
@@ -63,7 +64,6 @@ import {
 } from 'recharts'
 
 interface WorksheetProps {
-  apiBaseUrl: string
   fmea?: FMEARecord | null
   items: FMEAItemRecord[]
   actions: FMEAActionRecord[]
@@ -129,7 +129,6 @@ const defaultActionState: ActionFormState = {
 }
 
 export function FMEAWorksheet({
-  apiBaseUrl,
   fmea,
   items,
   actions,
@@ -163,14 +162,6 @@ export function FMEAWorksheet({
   const [causeEffectInsight, setCauseEffectInsight] = useState<CauseEffectInsight | null>(null)
   const [controlEffectiveness, setControlEffectiveness] = useState<ControlEffectivenessInsight[]>([])
   const [forecastInsight, setForecastInsight] = useState<RPNForecastInsight[]>([])
-
-  const ensureToken = () => {
-    const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null
-    if (!token) {
-      throw new Error('Authentication token missing. Please sign in again.')
-    }
-    return token
-  }
 
   const openCreateItem = () => {
     setEditingItem(null)
@@ -273,14 +264,9 @@ export function FMEAWorksheet({
     if (!fmea) return
     if (!confirm(`Delete item "${record.failure_mode}"?`)) return
     try {
-      const token = ensureToken()
-      const response = await fetch(`${apiBaseUrl}/api/fmea/${fmea.id}/items/${record.id}`, {
-        method: 'DELETE',
-        headers: { Authorization: `Bearer ${token}` }
+      await api(`/fmea/${fmea.id}/items/${record.id}`, {
+        method: 'DELETE'
       })
-      if (!response.ok) {
-        throw new Error('Failed to delete item')
-      }
       onRefresh()
     } catch (error) {
       console.error(error)
@@ -292,14 +278,9 @@ export function FMEAWorksheet({
     if (!fmea) return
     if (!confirm(`Delete action "${record.title}"?`)) return
     try {
-      const token = ensureToken()
-      const response = await fetch(`${apiBaseUrl}/api/fmea/${fmea.id}/actions/${record.id}`, {
-        method: 'DELETE',
-        headers: { Authorization: `Bearer ${token}` }
+      await api(`/fmea/${fmea.id}/actions/${record.id}`, {
+        method: 'DELETE'
       })
-      if (!response.ok) {
-        throw new Error('Failed to delete action')
-      }
       onRefresh()
     } catch (error) {
       console.error(error)
@@ -315,7 +296,6 @@ export function FMEAWorksheet({
     }
     try {
       setIsSavingItem(true)
-      const token = ensureToken()
       const payload = {
         item_function: itemForm.item_function,
         failure_mode: itemForm.failure_mode,
@@ -334,21 +314,10 @@ export function FMEAWorksheet({
         new_occurrence: itemForm.new_occurrence ? Number(itemForm.new_occurrence) : null,
         new_detection: itemForm.new_detection ? Number(itemForm.new_detection) : null
       }
-      const response = await fetch(
-        `${apiBaseUrl}/api/fmea/${fmea.id}/items${editingItem ? `/${editingItem.id}` : ''}`,
-        {
-          method: editingItem ? 'PATCH' : 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${token}`
-          },
-          body: JSON.stringify(payload)
-        }
-      )
-      if (!response.ok) {
-        const detail = await response.json().catch(() => ({}))
-        throw new Error(detail?.detail || 'Failed to save worksheet row')
-      }
+      await api(`/fmea/${fmea.id}/items${editingItem ? `/${editingItem.id}` : ''}`, {
+        method: editingItem ? 'PATCH' : 'POST',
+        body: JSON.stringify(payload)
+      })
       setItemDialogOpen(false)
       setEditingItem(null)
       onRefresh()
@@ -368,7 +337,6 @@ export function FMEAWorksheet({
     }
     try {
       setIsSavingAction(true)
-      const token = ensureToken()
       const payload = {
         title: actionForm.title,
         description: actionForm.description || null,
@@ -377,21 +345,10 @@ export function FMEAWorksheet({
         due_date: actionForm.due_date || null,
         item_id: actionForm.item_id ? Number(actionForm.item_id) : null
       }
-      const response = await fetch(
-        `${apiBaseUrl}/api/fmea/${fmea.id}/actions${editingAction ? `/${editingAction.id}` : ''}`,
-        {
-          method: editingAction ? 'PATCH' : 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${token}`
-          },
-          body: JSON.stringify(payload)
-        }
-      )
-      if (!response.ok) {
-        const detail = await response.json().catch(() => ({}))
-        throw new Error(detail?.detail || 'Failed to save action')
-      }
+      await api(`/fmea/${fmea.id}/actions${editingAction ? `/${editingAction.id}` : ''}`, {
+        method: editingAction ? 'PATCH' : 'POST',
+        body: JSON.stringify(payload)
+      })
       setActionDialogOpen(false)
       setEditingAction(null)
       onRefresh()
@@ -406,20 +363,11 @@ export function FMEAWorksheet({
   const callAiEndpoint = async <T,>(path: string, payload: Record<string, unknown>): Promise<T | null> => {
     try {
       setAiLoading(path)
-      const token = ensureToken()
-      const response = await fetch(`${apiBaseUrl}${path}`, {
+      const data = await api<T>(path, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`
-        },
         body: JSON.stringify(payload)
       })
-      if (!response.ok) {
-        const detail = await response.json().catch(() => ({}))
-        throw new Error(detail?.detail || 'AI service unavailable')
-      }
-      return (await response.json()) as T
+      return data
     } catch (error) {
       console.error(error)
       if (error instanceof Error) alert(error.message)
@@ -450,7 +398,7 @@ export function FMEAWorksheet({
     }))
 
   const requestRpnAlerts = async () => {
-    const data = await callAiEndpoint<RPNAlertInsight>('/api/fmea/ai/rpn-alerts', {
+    const data = await callAiEndpoint<RPNAlertInsight>('/fmea/ai/rpn-alerts', {
       threshold: fmea?.highest_rpn && fmea.highest_rpn > 0 ? Math.max(200, fmea.highest_rpn) : 200,
       items: buildItemPayload()
     })
@@ -459,7 +407,7 @@ export function FMEAWorksheet({
 
   const requestFailureModes = async () => {
     if (!fmea) return
-    const data = await callAiEndpoint<{ failure_modes: FailureModeInsight[] }>('/api/fmea/ai/failure-mode-predictions', {
+    const data = await callAiEndpoint<{ failure_modes: FailureModeInsight[] }>('/fmea/ai/failure-mode-predictions', {
       process: {
         title: fmea.title,
         process_or_product_name: fmea.process_or_product_name,
@@ -473,7 +421,7 @@ export function FMEAWorksheet({
   }
 
   const requestCauseEffect = async () => {
-    const data = await callAiEndpoint<CauseEffectInsight>('/api/fmea/ai/cause-effect', {
+    const data = await callAiEndpoint<CauseEffectInsight>('/fmea/ai/cause-effect', {
       items: buildItemPayload(),
       focus: fmea?.process_or_product_name
     })
@@ -481,14 +429,14 @@ export function FMEAWorksheet({
   }
 
   const requestControlEffectiveness = async () => {
-    const data = await callAiEndpoint<{ evaluations: ControlEffectivenessInsight[] }>('/api/fmea/ai/control-effectiveness', {
+    const data = await callAiEndpoint<{ evaluations: ControlEffectivenessInsight[] }>('/fmea/ai/control-effectiveness', {
       items: buildItemPayload()
     })
     if (data?.evaluations) setControlEffectiveness(data.evaluations)
   }
 
   const requestRpnForecast = async () => {
-    const data = await callAiEndpoint<{ projections: RPNForecastInsight[] }>('/api/fmea/ai/rpn-forecast', {
+    const data = await callAiEndpoint<{ projections: RPNForecastInsight[] }>('/fmea/ai/rpn-forecast', {
       items: buildItemPayload(),
       proposed_actions: actions.map((action) => ({
         id: action.id,
@@ -869,45 +817,45 @@ export function FMEAWorksheet({
               variant="secondary"
               className="flex items-center gap-2 border border-emerald-200 bg-white text-emerald-700"
               onClick={requestRpnAlerts}
-              disabled={aiLoading === '/api/fmea/ai/rpn-alerts'}
+              disabled={aiLoading === '/fmea/ai/rpn-alerts'}
             >
-              {aiLoading === '/api/fmea/ai/rpn-alerts' ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldAlert className="h-4 w-4" />}
+              {aiLoading === '/fmea/ai/rpn-alerts' ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldAlert className="h-4 w-4" />}
               RPN Alerts
             </Button>
             <Button
               variant="secondary"
               className="flex items-center gap-2 border border-emerald-200 bg-white text-emerald-700"
               onClick={requestFailureModes}
-              disabled={aiLoading === '/api/fmea/ai/failure-mode-predictions'}
+              disabled={aiLoading === '/fmea/ai/failure-mode-predictions'}
             >
-              {aiLoading === '/api/fmea/ai/failure-mode-predictions' ? <Loader2 className="h-4 w-4 animate-spin" /> : <FilePlus className="h-4 w-4" />}
+              {aiLoading === '/fmea/ai/failure-mode-predictions' ? <Loader2 className="h-4 w-4 animate-spin" /> : <FilePlus className="h-4 w-4" />}
               Failure Mode Ideas
             </Button>
             <Button
               variant="secondary"
               className="flex items-center gap-2 border border-emerald-200 bg-white text-emerald-700"
               onClick={requestCauseEffect}
-              disabled={aiLoading === '/api/fmea/ai/cause-effect'}
+              disabled={aiLoading === '/fmea/ai/cause-effect'}
             >
-              {aiLoading === '/api/fmea/ai/cause-effect' ? <Loader2 className="h-4 w-4 animate-spin" /> : <BarChart3 className="h-4 w-4" />}
+              {aiLoading === '/fmea/ai/cause-effect' ? <Loader2 className="h-4 w-4 animate-spin" /> : <BarChart3 className="h-4 w-4" />}
               Cause & Effect
             </Button>
             <Button
               variant="secondary"
               className="flex items-center gap-2 border border-emerald-200 bg-white text-emerald-700"
               onClick={requestControlEffectiveness}
-              disabled={aiLoading === '/api/fmea/ai/control-effectiveness'}
+              disabled={aiLoading === '/fmea/ai/control-effectiveness'}
             >
-              {aiLoading === '/api/fmea/ai/control-effectiveness' ? <Loader2 className="h-4 w-4 animate-spin" /> : <ClipboardCheck className="h-4 w-4" />}
+              {aiLoading === '/fmea/ai/control-effectiveness' ? <Loader2 className="h-4 w-4 animate-spin" /> : <ClipboardCheck className="h-4 w-4" />}
               Control Assessment
             </Button>
             <Button
               variant="secondary"
               className="flex items-center gap-2 border border-emerald-200 bg-white text-emerald-700"
               onClick={requestRpnForecast}
-              disabled={aiLoading === '/api/fmea/ai/rpn-forecast'}
+              disabled={aiLoading === '/fmea/ai/rpn-forecast'}
             >
-              {aiLoading === '/api/fmea/ai/rpn-forecast' ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowRightCircle className="h-4 w-4" />}
+              {aiLoading === '/fmea/ai/rpn-forecast' ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowRightCircle className="h-4 w-4" />}
               RPN Forecast
             </Button>
           </div>
