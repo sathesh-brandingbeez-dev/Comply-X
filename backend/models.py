@@ -594,8 +594,26 @@ class QuestionType(str, enum.Enum):
     RATING = "rating"
     YES_NO = "yes_no"
     DATE = "date"
+    DATETIME = "datetime"
     NUMBER = "number"
     EMAIL = "email"
+    FILE_UPLOAD = "file_upload"
+    SIGNATURE = "signature"
+    MATRIX = "matrix"
+
+
+class QuestionnaireType(str, enum.Enum):
+    ASSESSMENT = "assessment"
+    SURVEY = "survey"
+    CHECKLIST = "checklist"
+    EVALUATION = "evaluation"
+
+
+class RiskLevel(str, enum.Enum):
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+    CRITICAL = "critical"
 
 class QuestionnaireStatus(str, enum.Enum):
     DRAFT = "draft"
@@ -606,10 +624,11 @@ class QuestionnaireStatus(str, enum.Enum):
 
 class Questionnaire(Base):
     __tablename__ = "questionnaires"
-    
+
     id = Column(Integer, primary_key=True, index=True)
     title = Column(String(500), nullable=False)
     description = Column(Text, nullable=True)
+    questionnaire_type = Column(Enum(QuestionnaireType), default=QuestionnaireType.ASSESSMENT)
     status = Column(Enum(QuestionnaireStatus), default=QuestionnaireStatus.DRAFT)
     
     # Configuration
@@ -644,7 +663,7 @@ class Questionnaire(Base):
 
 class Question(Base):
     __tablename__ = "questions"
-    
+
     id = Column(Integer, primary_key=True, index=True)
     questionnaire_id = Column(Integer, ForeignKey("questionnaires.id"), nullable=False)
     
@@ -659,6 +678,11 @@ class Question(Base):
     max_value = Column(Integer, nullable=True)  # For rating/number questions
     placeholder = Column(String(255), nullable=True)
     help_text = Column(Text, nullable=True)
+    validation_rules = Column(Text, nullable=True)  # JSON definition of validation / logic
+    scoring_weight = Column(Float, nullable=True)
+    risk_level = Column(Enum(RiskLevel), nullable=True)
+    ai_metadata = Column(Text, nullable=True)  # Cache for AI insights like suggestions/quality
+    matrix_config = Column(Text, nullable=True)
     
     # Conditional logic
     conditional_question_id = Column(Integer, ForeignKey("questions.id"), nullable=True)

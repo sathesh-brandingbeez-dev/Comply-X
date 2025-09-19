@@ -2,7 +2,19 @@ from __future__ import annotations
 from pydantic import BaseModel, EmailStr, field_validator, Field, conint, AnyUrl
 from typing import Optional, List, Union, Dict, Any, Literal
 from datetime import datetime, date
-from models import UserRole, DocumentStatus, DocumentType, AccessLevel, QuestionType, QuestionnaireStatus, FMEAType, FMEAStatus, ActionStatus
+from models import (
+    UserRole,
+    DocumentStatus,
+    DocumentType,
+    AccessLevel,
+    QuestionType,
+    QuestionnaireStatus,
+    QuestionnaireType,
+    RiskLevel,
+    FMEAType,
+    FMEAStatus,
+    ActionStatus,
+)
 from enum import Enum
 
 
@@ -436,6 +448,10 @@ class QuestionBase(BaseModel):
     max_value: Optional[int] = None
     placeholder: Optional[str] = None
     help_text: Optional[str] = None
+    validation_rules: Optional[Dict[str, Any]] = None
+    scoring_weight: Optional[float] = None
+    risk_level: Optional[RiskLevel] = None
+    matrix_config: Optional[Dict[str, Any]] = None
     conditional_question_id: Optional[int] = None
     conditional_operator: Optional[str] = None
     conditional_value: Optional[str] = None
@@ -448,13 +464,15 @@ class QuestionResponse(QuestionBase):
     id: int
     questionnaire_id: int
     created_at: datetime
-    
+    ai_metadata: Optional[Dict[str, Any]] = None
+
     class Config:
         from_attributes = True
 
 class QuestionnaireBase(BaseModel):
     title: str
     description: Optional[str] = None
+    questionnaire_type: QuestionnaireType = QuestionnaireType.ASSESSMENT
     allow_anonymous: bool = False
     allow_multiple_responses: bool = False
     show_progress: bool = True
@@ -474,6 +492,7 @@ class QuestionnaireUpdate(BaseModel):
     title: Optional[str] = None
     description: Optional[str] = None
     status: Optional[QuestionnaireStatus] = None
+    questionnaire_type: Optional[QuestionnaireType] = None
     allow_anonymous: Optional[bool] = None
     allow_multiple_responses: Optional[bool] = None
     show_progress: Optional[bool] = None
@@ -490,6 +509,7 @@ class QuestionnaireResponse(QuestionnaireBase):
     created_by_id: int
     created_at: datetime
     updated_at: datetime
+    last_ai_run_at: Optional[datetime] = None
     questions: List[QuestionResponse] = []
     
     class Config:
@@ -536,6 +556,81 @@ class QuestionnaireStats(BaseModel):
     average_completion_time: Optional[int] = None
     unique_visitors: int
     bounce_rate: Optional[float] = None
+
+
+# --- AI Assist Schemas ---
+
+
+class QuestionSuggestionRequest(BaseModel):
+    questionnaire_type: QuestionnaireType
+    focus_area: Optional[str] = None
+    keywords: Optional[List[str]] = None
+    existing_questions: Optional[List[str]] = None
+
+
+class QuestionSuggestion(BaseModel):
+    suggestion: str
+    rationale: str
+    question_type: QuestionType
+    answer_guidance: Optional[List[str]] = None
+
+
+class QuestionSuggestionResponse(BaseModel):
+    questionnaire_type: QuestionnaireType
+    suggestions: List[QuestionSuggestion]
+
+
+class QuestionQualityRequest(BaseModel):
+    question_text: str
+    question_type: QuestionType
+    answer_options: Optional[List[str]] = None
+    questionnaire_type: Optional[QuestionnaireType] = None
+
+
+class BiasFlag(BaseModel):
+    phrase: str
+    reason: str
+    suggestion: str
+
+
+class QuestionQualityResponse(BaseModel):
+    clarity_score: int
+    complexity_score: int
+    bias_flags: List[BiasFlag]
+    improvements: List[str]
+
+
+class QuestionnaireAIAnalysis(BaseModel):
+    questionnaire_id: int
+    overall_score: int
+    strength_summary: List[str]
+    risk_summary: List[str]
+    recommendations: List[str]
+
+
+class ResponseInsight(BaseModel):
+    label: str
+    value: str
+    status: Literal["info", "warning", "success", "danger"] = "info"
+
+
+class ResponseAIInsights(BaseModel):
+    questionnaire_id: int
+    quality_score: int
+    predicted_completion_time: Optional[int] = None
+    anomalies: List[str] = Field(default_factory=list)
+    follow_up_recommendations: List[str] = Field(default_factory=list)
+    highlights: List[ResponseInsight] = Field(default_factory=list)
+
+
+class AnswerOptionRequest(BaseModel):
+    question_text: str
+    questionnaire_type: Optional[QuestionnaireType] = None
+    desired_count: int = Field(default=4, ge=2, le=8)
+
+
+class AnswerOptionResponse(BaseModel):
+    options: List[str]
 
 # Password Reset and MFA Schemas
 
