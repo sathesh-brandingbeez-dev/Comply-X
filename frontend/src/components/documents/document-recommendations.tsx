@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Loader2, RefreshCw, Sparkles } from 'lucide-react'
+import { api } from '@/lib/api'
 
 interface DocumentSummary {
   id: number
@@ -23,13 +24,18 @@ interface RecommendationEntry {
   priority?: string
 }
 
+interface RecommendationResponse {
+  recommendations?: RecommendationEntry[]
+  documents?: DocumentSummary[]
+  summary?: string | null
+}
+
 export function DocumentRecommendations() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [recommendations, setRecommendations] = useState<RecommendationEntry[]>([])
   const [documents, setDocuments] = useState<DocumentSummary[]>([])
   const [summary, setSummary] = useState<string | null>(null)
-  const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL
 
   const fetchRecommendations = async () => {
     const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null
@@ -37,30 +43,15 @@ export function DocumentRecommendations() {
       setError('Authentication required to load recommendations')
       return
     }
-    if (!API_BASE_URL) {
-      setError('API configuration missing')
-      return
-    }
 
     setLoading(true)
     setError(null)
 
     try {
-      const response = await fetch(`${API_BASE_URL}/api/documents/ai/recommendations`, {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      })
-
-      if (!response.ok) {
-        const data = await response.json().catch(() => ({}))
-        throw new Error(data.detail || 'Unable to load recommendations')
-      }
-
-      const data = await response.json()
+      const data = await api<RecommendationResponse>('/documents/ai/recommendations')
       setRecommendations(data.recommendations || [])
       setDocuments(data.documents || [])
-      setSummary(data.summary || null)
+      setSummary(data.summary ?? null)
     } catch (error) {
       console.error('Recommendation error:', error)
       setError(error instanceof Error ? error.message : 'Unable to load recommendations')
