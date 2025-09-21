@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import json
+import logging
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -32,6 +35,8 @@ from models import (
     User,
     UserRole,
 )
+from pydantic import ValidationError
+
 from schemas import (
     DocumentAICompletionRequest,
     DocumentAICompletionResponse,
@@ -62,6 +67,7 @@ from schemas import (
 
 
 router = APIRouter(prefix="/documents/ai", tags=["documents-ai"])
+logger = logging.getLogger(__name__)
 
 
 def _map_strings_to_enum(values: List[str], enum_cls) -> List[Any]:  # type: ignore[no-untyped-def]
@@ -90,6 +96,115 @@ def _serialize_document(doc: Document) -> Dict[str, Any]:
         "updated_at": doc.updated_at.isoformat() if doc.updated_at else None,
         "created_at": doc.created_at.isoformat() if doc.created_at else None,
         "created_by_id": doc.created_by_id,
+    }
+
+
+def _fallback_document_recommendations(
+    *, current_user: User, recent_docs: List[Document], accessible_docs: List[Document]
+) -> Dict[str, Any]:
+    """Generate deterministic recommendations when the AI provider is unavailable."""
+
+    recent_ids = {doc.id for doc in recent_docs}
+    recent_categories = {doc.category for doc in recent_docs if doc.category}
+    recent_types = {doc.document_type for doc in recent_docs if doc.document_type}
+
+    scored: List[tuple[float, Dict[str, Any], Document]] = []
+
+    def _normalise_datetime(value: Optional[datetime]) -> datetime:
+        if value is None:
+            return datetime.min
+        if value.tzinfo is not None:
+            return value.astimezone(timezone.utc).replace(tzinfo=None)
+        return value
+
+    for doc in accessible_docs:
+        if doc.id in recent_ids:
+            continue
+
+        score = 1.0  # Base score to keep overall ordering deterministic
+        reasons: List[str] = []
+
+        if doc.category and doc.category in recent_categories:
+            score += 3
+            reasons.append(f"Matches your recent {doc.category} documents")
+
+        if doc.document_type and doc.document_type in recent_types:
+            score += 2
+            doc_type_value = (
+                doc.document_type.value if isinstance(doc.document_type, DocumentType) else str(doc.document_type)
+            )
+            reasons.append(f"Similar {doc_type_value.replace('_', ' ')} content")
+
+        if doc.updated_at:
+            updated_at = _normalise_datetime(doc.updated_at)
+            age_days = (datetime.utcnow() - updated_at).days
+            recency_bonus = max(0, 45 - age_days) / 15
+            if recency_bonus > 0:
+                score += recency_bonus
+            if age_days <= 30:
+                reasons.append("Recently updated")
+
+        if doc.status == DocumentStatus.PUBLISHED:
+            score += 1
+            reasons.append("Published and ready to use")
+        elif doc.status == DocumentStatus.UNDER_REVIEW:
+            score += 0.5
+            reasons.append("Currently under review")
+
+        if doc.created_by_id == current_user.id:
+            score += 0.5
+            reasons.append("Created by you")
+
+        if not reasons:
+            reasons.append("Popular document in your workspace")
+
+        reason_text = "; ".join(dict.fromkeys(reasons))
+        priority = "high" if score >= 6 else "medium" if score >= 3.5 else "low"
+
+        scored.append(
+            (
+                score,
+                {
+                    "id": doc.id,
+                    "title": doc.title,
+                    "reason": reason_text,
+                    "priority": priority,
+                },
+                doc,
+            )
+        )
+
+    scored.sort(key=lambda item: (item[0], _normalise_datetime(item[2].updated_at)), reverse=True)
+    top_results = scored[:5]
+
+    recommendations = [entry[1] for entry in top_results]
+    recommended_ids = [entry[2].id for entry in top_results]
+
+    if recommendations:
+        summary = (
+            "Showing heuristic suggestions because AI recommendations are temporarily unavailable. "
+            "These picks are based on recency and similarity to your recent documents."
+        )
+    else:
+        summary = (
+            "AI recommendations are temporarily unavailable and there are no recent documents to suggest yet."
+        )
+
+    raw_payload = json.dumps(
+        {
+            "source": "fallback",
+            "matched_categories": sorted({cat for cat in recent_categories}),
+            "matched_types": [
+                value.value if isinstance(value, DocumentType) else str(value) for value in sorted(recent_types, key=str)
+            ],
+            "recommended_ids": recommended_ids,
+        }
+    )
+
+    return {
+        "recommendations": recommendations,
+        "summary": summary,
+        "raw": raw_payload,
     }
 
 
@@ -337,11 +452,30 @@ def ai_recommend_documents(
             "department_id": current_user.department_id,
         }
 
-        analysis = recommend_documents(
-            user_profile=user_profile,
-            recent_documents=recent_payload,
-            available_documents=accessible_payload,
-        )
+        try:
+            analysis = recommend_documents(
+                user_profile=user_profile,
+                recent_documents=recent_payload,
+                available_documents=accessible_payload,
+            )
+        except Exception as exc:  # noqa: BLE001 - broad to ensure graceful fallbacks
+            logger.warning("Falling back to heuristic document recommendations: %s", exc)
+            analysis = _fallback_document_recommendations(
+                current_user=current_user,
+                recent_docs=recent_docs,
+                accessible_docs=accessible_docs,
+            )
+
+        if not isinstance(analysis, dict):
+            logger.warning(
+                "Unexpected recommendation payload type %s; substituting fallback structure",
+                type(analysis).__name__,
+            )
+            analysis = {
+                "recommendations": [],
+                "summary": None,
+                "raw": json.dumps(analysis, default=str),
+            }
 
         recommendations: List[DocumentAIRecommendation] = []
         recommended_docs: Dict[int, Document] = {}
@@ -362,7 +496,12 @@ def ai_recommend_documents(
             if doc_match:
                 recommended_docs[doc_id] = doc_match
 
-        document_responses = [DocumentListResponse.model_validate(doc) for doc in recommended_docs.values()]
+        document_responses: List[DocumentListResponse] = []
+        for doc in recommended_docs.values():
+            try:
+                document_responses.append(DocumentListResponse.model_validate(doc))
+            except ValidationError:
+                logger.warning("Skipping document %s due to validation error", getattr(doc, "id", "<unknown>"))
 
         return DocumentAIRecommendationResponse(
             recommendations=recommendations,
