@@ -35,6 +35,8 @@ from models import (
     User,
     UserRole,
 )
+from pydantic import ValidationError
+
 from schemas import (
     DocumentAICompletionRequest,
     DocumentAICompletionResponse,
@@ -456,13 +458,24 @@ def ai_recommend_documents(
                 recent_documents=recent_payload,
                 available_documents=accessible_payload,
             )
-        except RuntimeError as exc:
+        except Exception as exc:  # noqa: BLE001 - broad to ensure graceful fallbacks
             logger.warning("Falling back to heuristic document recommendations: %s", exc)
             analysis = _fallback_document_recommendations(
                 current_user=current_user,
                 recent_docs=recent_docs,
                 accessible_docs=accessible_docs,
             )
+
+        if not isinstance(analysis, dict):
+            logger.warning(
+                "Unexpected recommendation payload type %s; substituting fallback structure",
+                type(analysis).__name__,
+            )
+            analysis = {
+                "recommendations": [],
+                "summary": None,
+                "raw": json.dumps(analysis, default=str),
+            }
 
         recommendations: List[DocumentAIRecommendation] = []
         recommended_docs: Dict[int, Document] = {}
@@ -483,7 +496,12 @@ def ai_recommend_documents(
             if doc_match:
                 recommended_docs[doc_id] = doc_match
 
-        document_responses = [DocumentListResponse.model_validate(doc) for doc in recommended_docs.values()]
+        document_responses: List[DocumentListResponse] = []
+        for doc in recommended_docs.values():
+            try:
+                document_responses.append(DocumentListResponse.model_validate(doc))
+            except ValidationError:
+                logger.warning("Skipping document %s due to validation error", getattr(doc, "id", "<unknown>"))
 
         return DocumentAIRecommendationResponse(
             recommendations=recommendations,
