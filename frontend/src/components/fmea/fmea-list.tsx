@@ -27,6 +27,7 @@ interface FMEAListProps {
   onSelect: (record: FMEARecord) => void
   onCreateClick: () => void
   onImportClick: () => void
+  canCreate?: boolean
 }
 
 const typeOptions: (FMEAType | 'All')[] = [
@@ -51,7 +52,8 @@ export function FMEAList({
   onStatusChange,
   onSelect,
   onCreateClick,
-  onImportClick
+  onImportClick,
+  canCreate = true
 }: FMEAListProps) {
   return (
     <Card className="border-green-100 shadow-sm">
@@ -64,12 +66,20 @@ export function FMEAList({
             </p>
           </div>
           <div className="flex flex-col gap-2 sm:flex-row">
-            <Button onClick={onCreateClick} className="bg-primary text-white">
-              Create FMEA
-            </Button>
-            <Button variant="secondary" onClick={onImportClick} className="border border-emerald-200 bg-emerald-50 text-emerald-700">
-              Import Template
-            </Button>
+            {canCreate ? (
+              <>
+                <Button onClick={onCreateClick} className="bg-primary text-white">
+                  Create FMEA
+                </Button>
+                <Button
+                  variant="secondary"
+                  onClick={onImportClick}
+                  className="border border-emerald-200 bg-emerald-50 text-emerald-700"
+                >
+                  Import Template
+                </Button>
+              </>
+            ) : null}
           </div>
         </div>
 

@@ -8,6 +8,7 @@ import { FMEAList } from '@/components/fmea/fmea-list'
 import { FMEACreationWizard } from '@/components/fmea/fmea-wizard'
 import { FMEAWorksheet } from '@/components/fmea/fmea-worksheet'
 import { TemplateImportDialog } from '@/components/fmea/template-import-dialog'
+import { useAuth } from '@/contexts/auth-context'
 import {
   FMEARecord,
   FMEADashboardSummary,
@@ -22,8 +23,12 @@ import {
 import { Card, CardContent } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { api } from '@/lib/api'
+import type { User } from '@/lib/auth'
+
+const CREATION_ALLOWED_ROLES: User['role'][] = ['admin', 'manager']
 
 export default function FMEAPage() {
+  const { user } = useAuth()
   const [activeTab, setActiveTab] = useState<'overview' | 'worksheet' | 'create'>('overview')
   const [summary, setSummary] = useState<FMEADashboardSummary | undefined>()
   const [summaryLoading, setSummaryLoading] = useState(false)
@@ -39,6 +44,7 @@ export default function FMEAPage() {
   const [teamOptions, setTeamOptions] = useState<TeamOption[]>([])
   const [templateDialogOpen, setTemplateDialogOpen] = useState(false)
   const [wizardPrefill, setWizardPrefill] = useState<FMEAInitialValues | undefined>(undefined)
+  const canCreateFmea = user ? CREATION_ALLOWED_ROLES.includes(user.role) : false
 
   const fetchSummary = async () => {
     try {
@@ -130,6 +136,10 @@ export default function FMEAPage() {
   }, [selectedFMEA])
 
   const handleApplyTemplate = (suggestion: TemplateSuggestion) => {
+    if (!canCreateFmea) {
+      alert('You do not have permission to create FMEA studies.')
+      return
+    }
     setWizardPrefill({
       title: suggestion.name,
       fmea_type: suggestion.focus.includes('FMEA') ? (suggestion.focus as FMEAType) : undefined,
@@ -146,6 +156,12 @@ export default function FMEAPage() {
     setActiveTab('worksheet')
     fetchSummary()
   }
+
+  useEffect(() => {
+    if (!canCreateFmea && activeTab === 'create') {
+      setActiveTab(selectedFMEA ? 'worksheet' : 'overview')
+    }
+  }, [canCreateFmea, activeTab, selectedFMEA])
 
   const teamLeadName = useMemo(() => {
     if (!selectedFMEA) return null
@@ -176,7 +192,7 @@ export default function FMEAPage() {
             <TabsTrigger value="worksheet" disabled={!selectedFMEA}>
               Worksheet
             </TabsTrigger>
-            <TabsTrigger value="create">Create FMEA</TabsTrigger>
+            {canCreateFmea ? <TabsTrigger value="create">Create FMEA</TabsTrigger> : null}
           </TabsList>
 
           <TabsContent value="overview" className="space-y-6">
@@ -194,8 +210,17 @@ export default function FMEAPage() {
                 setSelectedFMEA(record)
                 setActiveTab('worksheet')
               }}
-              onCreateClick={() => setActiveTab('create')}
-              onImportClick={() => setTemplateDialogOpen(true)}
+              onCreateClick={() => {
+                if (canCreateFmea) setActiveTab('create')
+              }}
+              onImportClick={() => {
+                if (!canCreateFmea) {
+                  alert('You do not have permission to create FMEA studies.')
+                  return
+                }
+                setTemplateDialogOpen(true)
+              }}
+              canCreate={canCreateFmea}
             />
           </TabsContent>
 
@@ -243,20 +268,24 @@ export default function FMEAPage() {
             )}
           </TabsContent>
 
-          <TabsContent value="create" className="space-y-6">
-            <FMEACreationWizard
-              teamOptions={teamOptions}
-              onCreated={handleFmeaCreated}
-              initialValues={wizardPrefill}
-            />
-          </TabsContent>
+          {canCreateFmea ? (
+            <TabsContent value="create" className="space-y-6">
+              <FMEACreationWizard
+                teamOptions={teamOptions}
+                onCreated={handleFmeaCreated}
+                initialValues={wizardPrefill}
+              />
+            </TabsContent>
+          ) : null}
         </Tabs>
       </div>
-      <TemplateImportDialog
-        open={templateDialogOpen}
-        onOpenChange={setTemplateDialogOpen}
-        onApplyTemplate={handleApplyTemplate}
-      />
+      {canCreateFmea ? (
+        <TemplateImportDialog
+          open={templateDialogOpen}
+          onOpenChange={setTemplateDialogOpen}
+          onApplyTemplate={handleApplyTemplate}
+        />
+      ) : null}
     </DashboardLayout>
   )
 }
