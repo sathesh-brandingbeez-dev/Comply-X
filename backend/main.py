@@ -99,6 +99,11 @@ try:
 except Exception:
     fmea_ai_router = None
 
+try:
+    from app.routes.document_ai import router as document_ai_router
+except Exception:
+    document_ai_router = None
+
 # ⬇️ import your models Base and engine
 from models import Base
 from database import engine
@@ -163,6 +168,9 @@ if calendar_ai_router:
 
 if fmea_ai_router:
     app.include_router(fmea_ai_router,          prefix="/api",                      tags=["fmea-ai"])
+
+if document_ai_router:
+    app.include_router(document_ai_router,     prefix="/api",                      tags=["documents-ai"])
 
 # Optional: manual init endpoint if you ever need to click it
 @app.post("/api/dev/init-db", tags=["health"])

@@ -436,6 +436,199 @@ class DocumentStats(BaseModel):
     expired_documents: int
     recent_uploads: int
 
+
+# --- Document AI Schemas ---
+
+
+class DocumentAICategorizeRequest(BaseModel):
+    title: str
+    description: Optional[str] = None
+    document_type: Optional[DocumentType] = None
+    department: Optional[str] = None
+    existing_tags: Optional[List[str]] = None
+    existing_keywords: Optional[List[str]] = None
+    text_preview: Optional[str] = None
+
+
+class DocumentAICategorizeResponse(BaseModel):
+    category: Optional[str] = None
+    secondary_categories: List[str] = []
+    tags: List[str] = []
+    keywords: List[str] = []
+    summary: Optional[str] = None
+    confidence: Optional[float] = None
+    notes: List[str] = []
+    raw: Optional[str] = None
+
+
+class DocumentAISearchPlan(BaseModel):
+    refined_query: Optional[str] = None
+    keywords: List[str] = []
+    document_types: List[str] = []
+    statuses: List[str] = []
+    access_levels: List[str] = []
+    priority: Optional[str] = None
+    reasoning: Optional[str] = None
+    raw: Optional[str] = None
+
+
+class DocumentAISearchRequest(BaseModel):
+    query: str
+    page: int = 1
+    size: int = 20
+
+
+class DocumentAISearchResponse(BaseModel):
+    plan: DocumentAISearchPlan
+    results: List[DocumentListResponse]
+    total_count: int
+    total_pages: int
+
+
+class DocumentAIDuplicateMatch(BaseModel):
+    id: int
+    title: str
+    similarity: float
+    reasoning: Optional[str] = None
+
+
+class DocumentAIDuplicateRequest(BaseModel):
+    title: str
+    description: Optional[str] = None
+    document_type: Optional[DocumentType] = None
+    file_hash: Optional[str] = None
+    keywords: Optional[List[str]] = None
+    tags: Optional[List[str]] = None
+
+
+class DocumentAIDuplicateResponse(BaseModel):
+    has_exact_match: bool = False
+    duplicates: List[DocumentAIDuplicateMatch] = []
+    notes: List[str] = []
+    raw: Optional[str] = None
+
+
+class DocumentAIRecommendation(BaseModel):
+    id: int
+    title: str
+    reason: Optional[str] = None
+    priority: Optional[str] = None
+
+
+class DocumentAIRecommendationResponse(BaseModel):
+    recommendations: List[DocumentAIRecommendation] = []
+    documents: List[DocumentListResponse] = []
+    summary: Optional[str] = None
+    raw: Optional[str] = None
+
+
+class DocumentAICompletionRequest(BaseModel):
+    context: str
+    focus: Optional[str] = None
+
+
+class DocumentAICompletionResponse(BaseModel):
+    completion: str
+    reasoning: Optional[str] = None
+    tips: List[str] = []
+    raw: Optional[str] = None
+
+
+class DocumentAITemplateSuggestion(BaseModel):
+    name: str
+    description: Optional[str] = None
+    when_to_use: Optional[str] = None
+
+
+class DocumentAITemplateResponse(BaseModel):
+    templates: List[DocumentAITemplateSuggestion] = []
+    sections: List[str] = []
+    notes: List[str] = []
+    raw: Optional[str] = None
+
+
+class DocumentAIGrammarIssue(BaseModel):
+    issue: str
+    severity: Optional[str] = None
+    suggestion: Optional[str] = None
+
+
+class DocumentAIGrammarRequest(BaseModel):
+    content: str
+    jurisdiction: Optional[str] = None
+
+
+class DocumentAIGrammarResponse(BaseModel):
+    score: Optional[float] = None
+    issues: List[DocumentAIGrammarIssue] = []
+    summary: Optional[str] = None
+    raw: Optional[str] = None
+
+
+class DocumentAINumberingRequest(BaseModel):
+    outline: List[str]
+    cross_reference_hints: Optional[List[str]] = None
+
+
+class DocumentAINumberedSection(BaseModel):
+    number: str
+    heading: str
+
+
+class DocumentAINumberingResponse(BaseModel):
+    numbered_sections: List[DocumentAINumberedSection] = []
+    cross_references: List[str] = []
+    notes: List[str] = []
+    raw: Optional[str] = None
+
+
+class DocumentAIReviewer(BaseModel):
+    id: int
+    name: str
+    role: Optional[str] = None
+    expertise: Optional[List[str]] = None
+    workload: Optional[str] = None
+
+
+class DocumentAIWorkflowAssignRequest(BaseModel):
+    document_id: Optional[int] = None
+    document_type: Optional[str] = None
+    department: Optional[str] = None
+    reviewer_ids: Optional[List[int]] = None
+
+
+class DocumentAIWorkflowAssignResponse(BaseModel):
+    recommended: List[DocumentAIReviewer] = []
+    backup: List[DocumentAIReviewer] = []
+    notes: List[str] = []
+    raw: Optional[str] = None
+
+
+class DocumentAIWorkflowProgressRequest(BaseModel):
+    document_id: Optional[int] = None
+
+
+class DocumentAIWorkflowProgressResponse(BaseModel):
+    next_step: Optional[str] = None
+    automation: List[str] = []
+    blockers: List[str] = []
+    notes: List[str] = []
+    raw: Optional[str] = None
+
+
+class DocumentAIWorkflowTimelineRequest(BaseModel):
+    document_id: Optional[int] = None
+    sla_days: Optional[int] = None
+
+
+class DocumentAIWorkflowTimelineResponse(BaseModel):
+    estimated_completion: Optional[str] = None
+    phase_estimates: List[Dict[str, Any]] = []
+    risk_level: Optional[str] = None
+    confidence: Optional[float] = None
+    notes: List[str] = []
+    raw: Optional[str] = None
+
 # Questionnaire Schemas
 
 class QuestionBase(BaseModel):
