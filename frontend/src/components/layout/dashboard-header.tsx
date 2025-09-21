@@ -4,6 +4,7 @@ import { useAuth } from '@/contexts/auth-context'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
+import { useRouter } from 'next/navigation'
 import { 
   Bell, 
   Search, 
@@ -25,6 +26,7 @@ interface DashboardHeaderProps {
 
 export function DashboardHeader({ onMenuClick }: DashboardHeaderProps) {
   const { user } = useAuth()
+  const router = useRouter()
 
   if (!user) return null
 
@@ -123,7 +125,9 @@ export function DashboardHeader({ onMenuClick }: DashboardHeaderProps) {
               🚨 Report Incident
             </DropdownMenuItem>
             <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={() => alert('Calendar coming soon!')}>
+            <DropdownMenuItem
+              onClick={() => router.push('/calendar?intent=new-meeting')}
+            >
               📅 Schedule Meeting
             </DropdownMenuItem>
           </DropdownMenuContent>
