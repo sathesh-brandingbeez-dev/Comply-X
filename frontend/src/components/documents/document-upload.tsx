@@ -16,6 +16,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Card, CardContent } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
 import { 
   Upload, 
   FileText, 
@@ -25,6 +26,13 @@ import {
   AlertCircle
 } from 'lucide-react'
 import { StatusWorkflowHelp } from './status-workflow-help'
+
+interface DuplicateMatch {
+  id: number
+  title: string
+  similarity: number
+  reasoning?: string
+}
 
 const uploadSchema = z.object({
   title: z.string().min(1, 'Title is required'),
@@ -53,6 +61,14 @@ export function DocumentUpload({ onUploadSuccess }: DocumentUploadProps) {
   const [uploading, setUploading] = useState(false)
   const [uploadStatus, setUploadStatus] = useState<'idle' | 'success' | 'error'>('idle')
   const [errorMessage, setErrorMessage] = useState('')
+  const [analyzing, setAnalyzing] = useState(false)
+  const [aiCategory, setAiCategory] = useState<string | null>(null)
+  const [aiTags, setAiTags] = useState<string[]>([])
+  const [aiKeywords, setAiKeywords] = useState<string[]>([])
+  const [aiNotes, setAiNotes] = useState<string[]>([])
+  const [aiConfidence, setAiConfidence] = useState<number | null>(null)
+  const [aiSummary, setAiSummary] = useState<string | null>(null)
+  const [duplicateMatches, setDuplicateMatches] = useState<DuplicateMatch[]>([])
   const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL;
 
   const {
@@ -110,6 +126,7 @@ export function DocumentUpload({ onUploadSuccess }: DocumentUploadProps) {
     if (file) {
       setSelectedFile(file)
       setUploadStatus('idle')
+      resetAISignals()
       // Auto-fill title with filename if title is empty
       if (!watch('title')) {
         setValue('title', file.name.replace(/\.[^/.]+$/, ''))
@@ -121,6 +138,7 @@ export function DocumentUpload({ onUploadSuccess }: DocumentUploadProps) {
     setSelectedFile(null)
     const fileInput = document.getElementById('file-upload') as HTMLInputElement
     if (fileInput) fileInput.value = ''
+    resetAISignals()
   }
 
   const formatFileSize = (bytes: number) => {
@@ -129,6 +147,123 @@ export function DocumentUpload({ onUploadSuccess }: DocumentUploadProps) {
     const sizes = ['Bytes', 'KB', 'MB', 'GB']
     const i = Math.floor(Math.log(bytes) / Math.log(k))
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
+  }
+
+  const resetAISignals = () => {
+    setAiCategory(null)
+    setAiTags([])
+    setAiKeywords([])
+    setAiNotes([])
+    setAiConfidence(null)
+    setAiSummary(null)
+    setDuplicateMatches([])
+  }
+
+  const computeFileHash = async (file: File) => {
+    const buffer = await file.arrayBuffer()
+    const digest = await crypto.subtle.digest('SHA-256', buffer)
+    return Array.from(new Uint8Array(digest)).map(b => b.toString(16).padStart(2, '0')).join('')
+  }
+
+  const readTextPreview = async (file: File) => {
+    if (file.type.startsWith('text/') || file.type === 'application/json') {
+      return new Promise<string>((resolve) => {
+        const reader = new FileReader()
+        reader.onload = () => {
+          const content = typeof reader.result === 'string' ? reader.result : ''
+          resolve(content.slice(0, 4000))
+        }
+        reader.onerror = () => resolve('')
+        reader.readAsText(file)
+      })
+    }
+    return ''
+  }
+
+  const handleRunAI = async () => {
+    if (!selectedFile) {
+      setErrorMessage('Select a document before running AI analysis')
+      return
+    }
+
+    const token = localStorage.getItem('auth_token')
+    if (!token) {
+      setErrorMessage('No authentication token found. Please login again.')
+      setUploadStatus('error')
+      return
+    }
+
+    setAnalyzing(true)
+    setErrorMessage('')
+
+    try {
+      const textPreview = await readTextPreview(selectedFile)
+
+      const categorizeResponse = await fetch(`${API_BASE_URL}/api/documents/ai/categorize`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          title: watch('title'),
+          description: watch('description'),
+          document_type: watch('document_type'),
+          existing_tags: watch('tags') ? watch('tags')?.split(',').map(t => t.trim()).filter(Boolean) : undefined,
+          existing_keywords: watch('keywords') ? watch('keywords')?.split(',').map(t => t.trim()).filter(Boolean) : undefined,
+          text_preview: textPreview
+        })
+      })
+
+      if (categorizeResponse.ok) {
+        const data = await categorizeResponse.json()
+        if (data.category && !watch('category')) {
+          setValue('category', data.category)
+        }
+        if (data.tags?.length && !watch('tags')) {
+          setValue('tags', data.tags.join(', '))
+        }
+        if (data.keywords?.length && !watch('keywords')) {
+          setValue('keywords', data.keywords.join(', '))
+        }
+        setAiCategory(data.category || null)
+        setAiTags(data.tags || [])
+        setAiKeywords(data.keywords || [])
+        setAiNotes(data.notes || [])
+        setAiConfidence(typeof data.confidence === 'number' ? data.confidence : null)
+        setAiSummary(data.summary || null)
+      }
+
+      const fileHash = await computeFileHash(selectedFile)
+      const duplicateResponse = await fetch(`${API_BASE_URL}/api/documents/ai/duplicates`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          title: watch('title'),
+          description: watch('description'),
+          document_type: watch('document_type'),
+          file_hash: fileHash,
+          keywords: watch('keywords') ? watch('keywords')?.split(',').map(k => k.trim()).filter(Boolean) : undefined,
+          tags: watch('tags') ? watch('tags')?.split(',').map(k => k.trim()).filter(Boolean) : undefined
+        })
+      })
+
+      if (duplicateResponse.ok) {
+        const duplicateData = await duplicateResponse.json()
+        setDuplicateMatches(duplicateData.duplicates || [])
+        if (duplicateData.notes?.length) {
+          setAiNotes(prev => [...new Set([...prev, ...duplicateData.notes])])
+        }
+      }
+    } catch (error) {
+      console.error('AI analysis error:', error)
+      setErrorMessage('Unable to complete AI analysis. Please try again later.')
+    } finally {
+      setAnalyzing(false)
+    }
   }
 
   const onSubmit = async (data: UploadFormData) => {
@@ -317,6 +452,86 @@ export function DocumentUpload({ onUploadSuccess }: DocumentUploadProps) {
           rows={3}
         />
       </div>
+
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+        <p className="text-sm text-muted-foreground">
+          Use AI to pre-fill categories, tags, and spot duplicates before uploading.
+        </p>
+        <Button type="button" variant="outline" onClick={handleRunAI} disabled={!selectedFile || analyzing}>
+          {analyzing ? (
+            <>
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              Analysing...
+            </>
+          ) : (
+            <>
+              <FileText className="h-4 w-4 mr-2" />
+              Run AI Assist
+            </>
+          )}
+        </Button>
+      </div>
+
+      {(aiCategory || aiTags.length > 0 || aiKeywords.length > 0 || duplicateMatches.length > 0 || aiNotes.length > 0) && (
+        <div className="rounded-lg border border-dashed border-muted-foreground/40 bg-muted/40 p-4 space-y-3">
+          {aiCategory && (
+            <div>
+              <p className="text-sm font-medium">Suggested Category</p>
+              <Badge variant="secondary">{aiCategory}</Badge>
+            </div>
+          )}
+          {aiSummary && <p className="text-sm text-muted-foreground">{aiSummary}</p>}
+          {aiConfidence !== null && (
+            <p className="text-xs text-muted-foreground">AI confidence: {(aiConfidence * 100).toFixed(0)}%</p>
+          )}
+          {aiTags.length > 0 && (
+            <div className="space-y-1">
+              <p className="text-sm font-medium">Suggested Tags</p>
+              <div className="flex flex-wrap gap-2">
+                {aiTags.map((tag) => (
+                  <Badge key={tag} variant="outline">{tag}</Badge>
+                ))}
+              </div>
+            </div>
+          )}
+          {aiKeywords.length > 0 && (
+            <div className="space-y-1">
+              <p className="text-sm font-medium">Suggested Keywords</p>
+              <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
+                {aiKeywords.map((keyword) => (
+                  <span key={keyword} className="rounded border px-2 py-0.5 bg-background">{keyword}</span>
+                ))}
+              </div>
+            </div>
+          )}
+          {aiNotes.length > 0 && (
+            <div className="space-y-1">
+              <p className="text-sm font-medium">AI Notes</p>
+              <ul className="list-disc pl-5 text-xs text-muted-foreground space-y-1">
+                {aiNotes.map((note, index) => (
+                  <li key={`${note}-${index}`}>{note}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {duplicateMatches.length > 0 && (
+            <div className="space-y-1">
+              <p className="text-sm font-medium text-red-600 flex items-center gap-2">
+                <AlertCircle className="h-4 w-4" /> Potential duplicates detected
+              </p>
+              <ul className="space-y-2 text-sm">
+                {duplicateMatches.map((match) => (
+                  <li key={match.id} className="rounded border p-2 text-muted-foreground">
+                    <div className="font-medium text-foreground">{match.title}</div>
+                    <div className="text-xs">Similarity: {(match.similarity * 100).toFixed(0)}%</div>
+                    {match.reasoning && <div className="text-xs mt-1">{match.reasoning}</div>}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div className="space-y-2">

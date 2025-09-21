@@ -12,7 +12,26 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Card, CardContent } from '@/components/ui/card'
-import { Search, Filter, X, Calendar } from 'lucide-react'
+import { Search, Filter, X, Calendar, Sparkles, Loader2 } from 'lucide-react'
+
+interface DocumentAISearchPlan {
+  refined_query?: string
+  keywords: string[]
+  document_types: string[]
+  statuses: string[]
+  access_levels: string[]
+  priority?: string
+  reasoning?: string
+  raw?: string
+}
+
+interface DocumentAISearchPayload {
+  plan: DocumentAISearchPlan
+  documents: any[]
+  totalCount: number
+  totalPages: number
+  query: string
+}
 
 interface DocumentSearchParams {
   query?: string
@@ -35,11 +54,17 @@ interface DocumentSearchProps {
   onSearch: (params: DocumentSearchParams) => void
   searchParams: DocumentSearchParams
   advanced?: boolean
+  onAISearch?: (result: DocumentAISearchPayload) => void
+  onAIStart?: () => void
+  onAIEnd?: () => void
 }
 
-export function DocumentSearch({ onSearch, searchParams, advanced = false }: DocumentSearchProps) {
+export function DocumentSearch({ onSearch, searchParams, advanced = false, onAISearch, onAIStart, onAIEnd }: DocumentSearchProps) {
   const [localParams, setLocalParams] = useState<DocumentSearchParams>(searchParams)
   const [showAdvanced, setShowAdvanced] = useState(advanced)
+  const [aiLoading, setAiLoading] = useState(false)
+  const [aiError, setAiError] = useState<string | null>(null)
+  const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL
 
   const documentTypes = [
     { value: 'all', label: 'All Types' },
@@ -116,6 +141,7 @@ export function DocumentSearch({ onSearch, searchParams, advanced = false }: Doc
     }, {} as any)
 
     onSearch(cleanParams)
+    setAiError(null)
   }
 
   const handleReset = () => {
@@ -127,6 +153,7 @@ export function DocumentSearch({ onSearch, searchParams, advanced = false }: Doc
     }
     setLocalParams(resetParams)
     onSearch(resetParams)
+    setAiError(null)
   }
 
   const hasActiveFilters = () => {
@@ -136,6 +163,63 @@ export function DocumentSearch({ onSearch, searchParams, advanced = false }: Doc
              localParams[key as keyof DocumentSearchParams] !== null && 
              localParams[key as keyof DocumentSearchParams] !== ''
     })
+  }
+
+  const handleAISearch = async () => {
+    if (!localParams.query) {
+      setAiError('Enter a natural language query before running AI search')
+      return
+    }
+
+    if (!onAISearch) {
+      handleSearch()
+      return
+    }
+
+    const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null
+    if (!token) {
+      setAiError('Authentication required for AI search')
+      return
+    }
+
+    setAiLoading(true)
+    setAiError(null)
+    onAIStart?.()
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/documents/ai/search`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          query: localParams.query,
+          page: localParams.page ?? 1,
+          size: localParams.size ?? 20
+        })
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}))
+        throw new Error(errorData.detail || 'AI search failed')
+      }
+
+      const data = await response.json()
+      onAISearch({
+        plan: data.plan,
+        documents: data.results,
+        totalCount: data.total_count,
+        totalPages: data.total_pages,
+        query: localParams.query || ''
+      })
+    } catch (error) {
+      console.error('AI search error:', error)
+      setAiError(error instanceof Error ? error.message : 'AI search unavailable')
+    } finally {
+      setAiLoading(false)
+      onAIEnd?.()
+    }
   }
 
   return (
@@ -153,7 +237,7 @@ export function DocumentSearch({ onSearch, searchParams, advanced = false }: Doc
               onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
             />
           </div>
-          
+
           <Button
             type="button"
             variant="outline"
@@ -164,7 +248,7 @@ export function DocumentSearch({ onSearch, searchParams, advanced = false }: Doc
             Filters
             {hasActiveFilters() && (
               <span className="bg-primary text-primary-foreground rounded-full px-2 py-0.5 text-xs">
-                {Object.keys(localParams).filter(key => 
+                {Object.keys(localParams).filter(key =>
                   !['page', 'size', 'sort_by', 'sort_order'].includes(key) &&
                   localParams[key as keyof DocumentSearchParams] !== undefined &&
                   localParams[key as keyof DocumentSearchParams] !== null &&
@@ -173,12 +257,30 @@ export function DocumentSearch({ onSearch, searchParams, advanced = false }: Doc
               </span>
             )}
           </Button>
-          
+
           <Button onClick={handleSearch}>
             <Search className="h-4 w-4 mr-2" />
             Search
           </Button>
+
+          <Button type="button" variant="secondary" onClick={handleAISearch} disabled={aiLoading}>
+            {aiLoading ? (
+              <>
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                AI Searching
+              </>
+            ) : (
+              <>
+                <Sparkles className="h-4 w-4 mr-2" />
+                Ask AI
+              </>
+            )}
+          </Button>
         </div>
+
+        {aiError && (
+          <p className="text-sm text-destructive">{aiError}</p>
+        )}
 
         {/* Advanced Filters */}
         {(showAdvanced || advanced) && (

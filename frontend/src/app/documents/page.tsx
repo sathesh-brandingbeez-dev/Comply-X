@@ -6,16 +6,18 @@ import { DocumentsList } from '@/components/documents/documents-list'
 import { DocumentUpload } from '@/components/documents/document-upload'
 import { DocumentSearch } from '@/components/documents/document-search'
 import { DocumentStats } from '@/components/documents/document-stats'
+import { DocumentRecommendations } from '@/components/documents/document-recommendations'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { 
-  FileText, 
-  Upload, 
-  Search, 
+import {
+  FileText,
+  Upload,
+  Search,
   BarChart3,
   Filter,
-  Plus
+  Plus,
+  Sparkles
 } from 'lucide-react'
 
 interface Document {
@@ -46,6 +48,22 @@ interface DocumentSearchParams {
   sort_order?: string
 }
 
+interface DocumentAISearchPlan {
+  refined_query?: string
+  keywords: string[]
+  document_types: string[]
+  statuses: string[]
+  access_levels: string[]
+  priority?: string
+  reasoning?: string
+  raw?: string
+}
+
+interface AISearchState {
+  plan: DocumentAISearchPlan | null
+  query: string | null
+}
+
 export default function DocumentsPage() {
   const [documents, setDocuments] = useState<Document[]>([])
   const [loading, setLoading] = useState(true)
@@ -58,6 +76,7 @@ export default function DocumentsPage() {
   })
   const [totalCount, setTotalCount] = useState(0)
   const [totalPages, setTotalPages] = useState(1)
+  const [aiSearchState, setAiSearchState] = useState<AISearchState>({ plan: null, query: null })
   const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "https://comply-x.onrender.com";
 
     if (!API_BASE_URL) {
@@ -91,6 +110,7 @@ export default function DocumentsPage() {
         setDocuments(data.documents)
         setTotalCount(data.total_count)
         setTotalPages(data.total_pages)
+        setAiSearchState({ plan: null, query: null })
       } else {
         console.error('Failed to fetch documents')
       }
@@ -107,10 +127,71 @@ export default function DocumentsPage() {
     fetchDocuments(updatedParams)
   }
 
+  const fetchAISearchPage = async (page: number) => {
+    if (!aiSearchState.query) {
+      return
+    }
+
+    try {
+      setLoading(true)
+      const token = localStorage.getItem('auth_token')
+      if (!token) {
+        console.error('No authentication token found')
+        return
+      }
+
+      const response = await fetch(`${API_BASE_URL}/api/documents/ai/search`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          query: aiSearchState.query,
+          page,
+          size: searchParams.size ?? 20
+        })
+      })
+
+      if (response.ok) {
+        const data = await response.json()
+        setDocuments(data.results)
+        setTotalCount(data.total_count)
+        setTotalPages(data.total_pages)
+      } else {
+        console.error('Failed to fetch AI search results')
+      }
+    } catch (error) {
+      console.error('AI search pagination error:', error)
+    } finally {
+      setLoading(false)
+    }
+  }
+
   const handlePageChange = (page: number) => {
     const updatedParams = { ...searchParams, page }
     setSearchParams(updatedParams)
-    fetchDocuments(updatedParams)
+    if (aiSearchState.plan) {
+      fetchAISearchPage(page)
+    } else {
+      fetchDocuments(updatedParams)
+    }
+  }
+
+  const handleAISearchResult = (result: { plan: DocumentAISearchPlan; documents: Document[]; totalCount: number; totalPages: number; query: string }) => {
+    setDocuments(result.documents)
+    setTotalCount(result.totalCount)
+    setTotalPages(result.totalPages)
+    setLoading(false)
+    setAiSearchState({ plan: result.plan, query: result.query })
+    setSearchParams(prev => ({ ...prev, page: 1, query: result.query }))
+  }
+
+  const clearAISearch = () => {
+    setAiSearchState({ plan: null, query: null })
+    const resetParams = { ...searchParams, page: 1 }
+    setSearchParams(resetParams)
+    fetchDocuments(resetParams)
   }
 
   const handleUploadSuccess = () => {
@@ -144,6 +225,8 @@ export default function DocumentsPage() {
 
         {/* Stats Overview */}
         <DocumentStats />
+
+        <DocumentRecommendations />
 
         {/* Main Content */}
         <Tabs defaultValue="documents" className="space-y-4">
@@ -181,14 +264,52 @@ export default function DocumentsPage() {
                 </div>
               </CardHeader>
               <CardContent>
+                {aiSearchState.plan && (
+                  <div className="mb-4 rounded-lg border border-dashed border-muted-foreground/40 bg-muted/30 p-4 space-y-2">
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                      <div className="flex items-center gap-2 text-sm font-medium">
+                        <Sparkles className="h-4 w-4 text-primary" />
+                        AI search understanding
+                      </div>
+                      <Button variant="ghost" size="sm" onClick={clearAISearch}>
+                        Reset
+                      </Button>
+                    </div>
+                    {aiSearchState.plan.refined_query && (
+                      <p className="text-sm text-muted-foreground">
+                        Refined query: {aiSearchState.plan.refined_query}
+                      </p>
+                    )}
+                    {aiSearchState.plan.reasoning && (
+                      <p className="text-sm text-muted-foreground">{aiSearchState.plan.reasoning}</p>
+                    )}
+                    <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
+                      {aiSearchState.plan.keywords?.length > 0 && (
+                        <span>Keywords: {aiSearchState.plan.keywords.join(', ')}</span>
+                      )}
+                      {aiSearchState.plan.document_types?.length > 0 && (
+                        <span>Types: {aiSearchState.plan.document_types.join(', ')}</span>
+                      )}
+                      {aiSearchState.plan.statuses?.length > 0 && (
+                        <span>Status focus: {aiSearchState.plan.statuses.join(', ')}</span>
+                      )}
+                      {aiSearchState.plan.access_levels?.length > 0 && (
+                        <span>Access levels: {aiSearchState.plan.access_levels.join(', ')}</span>
+                      )}
+                    </div>
+                  </div>
+                )}
                 {/* Quick Search */}
                 <div className="mb-4">
-                  <DocumentSearch 
+                  <DocumentSearch
                     onSearch={handleSearch}
                     searchParams={searchParams}
+                    onAISearch={handleAISearchResult}
+                    onAIStart={() => setLoading(true)}
+                    onAIEnd={() => setLoading(false)}
                   />
                 </div>
-                
+
                 {/* Documents List */}
                 <DocumentsList
                   documents={documents}
