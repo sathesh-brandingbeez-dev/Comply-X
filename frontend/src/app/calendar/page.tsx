@@ -620,6 +620,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/contexts/auth-context";
 import { DashboardLayout } from "@/components/layout/dashboard-layout";
 
@@ -767,6 +768,11 @@ export default function CalendarPage() {
 }
 
 function CalendarContent() {
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParamsString = searchParams.toString();
+  const intent = searchParams.get("intent");
   const [view, setView] = useState<View>("month");
   const [anchor, setAnchor] = useState<Date>(() => new Date());
   const [visibleRange, setVisibleRange] = useState<{ start: Date; end: Date }>(
@@ -797,6 +803,19 @@ function CalendarContent() {
     () => Intl.DateTimeFormat().resolvedOptions().timeZone,
     [],
   );
+
+  useEffect(() => {
+    if (intent !== "new-meeting") return;
+
+    setEditing(null);
+    setSheetOpen(true);
+
+    const params = new URLSearchParams(searchParamsString);
+    params.delete("intent");
+    const query = params.toString();
+    const nextUrl = query ? `${pathname}?${query}` : pathname;
+    router.replace(nextUrl, { scroll: false });
+  }, [intent, pathname, router, searchParamsString]);
 
   useEffect(() => {
     if (view === "month") setVisibleRange(monthRange(anchor));
