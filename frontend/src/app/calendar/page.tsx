@@ -739,6 +739,7 @@ function toEventSheetInitial(ev: CalendarEvent | null): EventSheetInitial {
     all_day: ev.all_day,
     start_at: ev.start_at,
     end_at: ev.end_at,
+    time_zone: (ev as { tz?: string | null }).tz ?? undefined,
     reminders: normalizeReminders((ev as { reminders?: unknown }).reminders),
   };
 }
