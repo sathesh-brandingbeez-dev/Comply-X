@@ -1,10 +1,44 @@
 "use client";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"; // :contentReference[oaicite:34]{index=34}
-import { Badge } from "@/components/ui/badge"; // :contentReference[oaicite:35]{index=35}
-import { Button } from "@/components/ui/button"; // :contentReference[oaicite:36]{index=36}
-import type { CalendarEvent } from "@/types/calendar";
 
-export default function EventCard({ ev, onEdit }: { ev: CalendarEvent; onEdit: ()=>void }) {
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import type { CalendarEvent } from "@/types/calendar";
+import { formatInTimeZone, resolveTimeZone } from "@/lib/timezone";
+
+function formatEventRange(ev: CalendarEvent): string {
+  if (ev.all_day) {
+    const start = formatInTimeZone(ev.start_at, ev.tz, { dateStyle: "medium" });
+    const end = formatInTimeZone(ev.end_at, ev.tz, { dateStyle: "medium" });
+    if (start === end) {
+      return `${start} (All day)`;
+    }
+    return `${start} – ${end} (All day)`;
+  }
+
+  const options: Intl.DateTimeFormatOptions = {
+    dateStyle: "medium",
+    timeStyle: "short",
+  };
+  const start = formatInTimeZone(ev.start_at, ev.tz, options);
+  const end = formatInTimeZone(ev.end_at, ev.tz, options);
+  const tzLabel = resolveTimeZone(ev.tz).replace(/_/g, " ");
+  return `${start} – ${end} (${tzLabel})`;
+}
+
+export default function EventCard({
+  ev,
+  onEdit,
+}: {
+  ev: CalendarEvent;
+  onEdit: () => void;
+}) {
   return (
     <Card>
       <CardHeader>
@@ -17,11 +51,13 @@ export default function EventCard({ ev, onEdit }: { ev: CalendarEvent; onEdit: (
           <Badge>{ev.status}</Badge>
         </CardDescription>
       </CardHeader>
-      <CardContent className="flex items-center justify-between">
+      <CardContent className="flex items-center justify-between gap-4">
         <div className="text-sm text-muted-foreground">
-          {new Date(ev.start_at).toLocaleString()} — {new Date(ev.end_at).toLocaleString()}
+          {formatEventRange(ev)}
         </div>
-        <Button size="sm" onClick={onEdit}>Edit</Button>
+        <Button size="sm" onClick={onEdit}>
+          Edit
+        </Button>
       </CardContent>
     </Card>
   );

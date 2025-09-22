@@ -26,6 +26,13 @@ import {
   extractCalendarActionItems,
   suggestCalendarTitle,
 } from "@/lib/calendar-ai-client";
+import {
+  resolveTimeZone,
+  toDateOnly,
+  toTimeOnly,
+  zonedDateTimeToUtc,
+  todayInTimeZone,
+} from "@/lib/timezone";
 
 type ReminderInput = { minutes_before: number };
 
@@ -86,10 +93,11 @@ type EventFormValues = {
 };
 
 type InitialEvent = Partial<
-  Omit<EventUpsertInput, "reminders" | "tz" | "attendees"> & {
+  Omit<EventUpsertInput, "reminders" | "attendees"> & {
     id?: string | number;
     reminders?: number[];
     time_zone?: string;
+    tz?: string;
     attendees_required?: string[];
     attendees_optional?: string[];
   }
@@ -103,26 +111,11 @@ type Props = {
   upsertEvent?: (payload: EventUpsertInput) => Promise<unknown>;
 };
 
-function toDateOnly(iso: string): string {
-  const d = new Date(iso);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(
-    d.getDate(),
-  ).padStart(2, "0")}`;
-}
-function toTimeOnly(iso: string): string {
-  const d = new Date(iso);
-  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
-}
-function joinDateTime(
-  dateStr: string,
-  timeStr: string | undefined,
-  _tz?: string,
-  allDay?: boolean,
-): string {
-  const base = allDay
-    ? `${dateStr}T00:00:00`
-    : `${dateStr}T${timeStr ?? "00:00"}:00`;
-  return new Date(base).toISOString();
+function shiftDate(dateStr: string, days: number): string {
+  const [year, month, day] = dateStr.split("-").map(Number);
+  const date = new Date(Date.UTC(year || 0, (month || 1) - 1, day || 1));
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
 }
 
 const REMINDER_OPTIONS_MIN = [15, 30, 60, 24 * 60, 7 * 24 * 60] as const;
@@ -139,6 +132,9 @@ export default function EventSheet({
       const isAllDay = Boolean(initial.all_day);
       const startISO = initial.start_at ?? new Date().toISOString();
       const endISO = initial.end_at ?? new Date().toISOString();
+      const initialTz = resolveTimeZone(
+        initial.time_zone ?? ("tz" in initial ? initial.tz : undefined),
+      );
 
       return {
         title: initial.title ?? "",
@@ -149,12 +145,11 @@ export default function EventSheet({
         priority: (initial.priority as Priority) ?? "Medium",
         status: (initial.status as EventStatus) ?? "Scheduled",
         all_day: isAllDay,
-        start_date: toDateOnly(startISO),
-        start_time: isAllDay ? undefined : toTimeOnly(startISO),
-        end_date: toDateOnly(endISO),
-        end_time: isAllDay ? undefined : toTimeOnly(endISO),
-        time_zone:
-          initial.time_zone ?? Intl.DateTimeFormat().resolvedOptions().timeZone,
+        start_date: toDateOnly(startISO, initialTz),
+        start_time: isAllDay ? undefined : toTimeOnly(startISO, initialTz),
+        end_date: toDateOnly(endISO, initialTz),
+        end_time: isAllDay ? undefined : toTimeOnly(endISO, initialTz),
+        time_zone: initialTz,
         attendees_required_csv: (initial.attendees_required ?? []).join(", "),
         attendees_optional_csv: (initial.attendees_optional ?? []).join(", "),
         reminders: initial.reminders ?? [],
@@ -175,7 +170,7 @@ export default function EventSheet({
       start_time: "10:00",
       end_date: today,
       end_time: "11:00",
-      time_zone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      time_zone: resolveTimeZone(),
       attendees_required_csv: "",
       attendees_optional_csv: "",
       reminders: [],
@@ -191,14 +186,82 @@ export default function EventSheet({
     reset,
     setValue,
     getValues,
-    formState: { isSubmitting, isDirty },
-  } = useForm<EventFormValues>({ defaultValues });
+    formState: { isSubmitting, isDirty, errors },
+  } = useForm<EventFormValues>({ defaultValues, shouldUnregister: true });
 
   React.useEffect(() => {
     if (open) reset(defaultValues);
   }, [open, defaultValues, reset]);
 
   const allDay = watch("all_day");
+  const startDateValue = watch("start_date");
+  const endDateValue = watch("end_date");
+  const startTimeValue = watch("start_time");
+  const endTimeValue = watch("end_time");
+  const timeZoneValue = watch("time_zone");
+
+  const effectiveTimeZone = React.useMemo(
+    () => resolveTimeZone(timeZoneValue),
+    [timeZoneValue],
+  );
+
+  const todayInTz = React.useMemo(
+    () => todayInTimeZone(effectiveTimeZone),
+    [effectiveTimeZone],
+  );
+
+  React.useEffect(() => {
+    if (startDateValue && endDateValue && endDateValue < startDateValue) {
+      setValue("end_date", startDateValue, { shouldDirty: true });
+    }
+  }, [startDateValue, endDateValue, setValue]);
+
+  React.useEffect(() => {
+    if (
+      !allDay &&
+      startDateValue &&
+      endDateValue &&
+      startTimeValue &&
+      endTimeValue &&
+      startDateValue === endDateValue &&
+      endTimeValue <= startTimeValue
+    ) {
+      const [startHour, startMinute] = startTimeValue
+        .split(":")
+        .map((part) => Number(part) || 0);
+      const [endHour, endMinute] = endTimeValue
+        .split(":")
+        .map((part) => Number(part) || 0);
+
+      const startTotalMinutes = startHour * 60 + startMinute;
+      const endTotalMinutes = endHour * 60 + endMinute;
+
+      if (endTotalMinutes <= startTotalMinutes) {
+        let adjustedMinutes = startTotalMinutes + 30; // default buffer
+        let targetDate = startDateValue;
+
+        if (adjustedMinutes >= 24 * 60) {
+          adjustedMinutes -= 24 * 60;
+          targetDate = shiftDate(startDateValue, 1);
+          setValue("end_date", targetDate, { shouldDirty: true });
+        }
+
+        const hours = Math.floor(adjustedMinutes / 60)
+          .toString()
+          .padStart(2, "0");
+        const minutes = (adjustedMinutes % 60).toString().padStart(2, "0");
+
+        setValue("end_time", `${hours}:${minutes}`, { shouldDirty: true });
+      }
+    }
+  }, [
+    allDay,
+    startDateValue,
+    endDateValue,
+    startTimeValue,
+    endTimeValue,
+    setValue,
+  ]);
 
   const [titleLoading, setTitleLoading] = React.useState(false);
   const [titleError, setTitleError] = React.useState<string | null>(null);
@@ -284,17 +347,15 @@ export default function EventSheet({
   };
 
   const onSubmit: SubmitHandler<EventFormValues> = async (values) => {
-    const startISO = joinDateTime(
+    const startISO = zonedDateTimeToUtc(
       values.start_date,
-      values.start_time,
+      values.all_day ? undefined : values.start_time,
       values.time_zone,
-      values.all_day,
     );
-    const endISO = joinDateTime(
+    const endISO = zonedDateTimeToUtc(
       values.end_date,
-      values.end_time,
+      values.all_day ? undefined : values.end_time,
       values.time_zone,
-      values.all_day,
     );
 
     const attendees_required = values.attendees_required_csv
@@ -329,7 +390,7 @@ export default function EventSheet({
       all_day: Boolean(values.all_day),
       start_at: startISO,
       end_at: endISO,
-      tz: values.time_zone || "UTC",
+      tz: resolveTimeZone(values.time_zone),
       attendees,
       reminders: values.reminders.map((m) => ({
         minutes_before: m,
@@ -538,8 +599,20 @@ export default function EventSheet({
             <Input
               type="date"
               id="start_date"
-              {...register("start_date", { required: true })}
+              min={todayInTz}
+              aria-invalid={errors.start_date ? "true" : "false"}
+              {...register("start_date", {
+                required: "Start date is required",
+                validate: (value) =>
+                  value >= todayInTz ||
+                  `Start date cannot be before ${todayInTz.replaceAll("-", "/")}`,
+              })}
             />
+            {errors.start_date && (
+              <p className="text-xs text-destructive mt-1">
+                {errors.start_date.message as string}
+              </p>
+            )}
           </div>
 
           {!allDay && (
@@ -548,8 +621,16 @@ export default function EventSheet({
               <Input
                 type="time"
                 id="start_time"
-                {...register("start_time", { required: !allDay })}
+                aria-invalid={errors.start_time ? "true" : "false"}
+                {...register("start_time", {
+                  required: "Start time is required",
+                })}
               />
+              {errors.start_time && (
+                <p className="text-xs text-destructive mt-1">
+                  {errors.start_time.message as string}
+                </p>
+              )}
             </div>
           )}
 
@@ -558,8 +639,21 @@ export default function EventSheet({
             <Input
               type="date"
               id="end_date"
-              {...register("end_date", { required: true })}
+              min={startDateValue || todayInTz}
+              aria-invalid={errors.end_date ? "true" : "false"}
+              {...register("end_date", {
+                required: "End date is required",
+                validate: (value) =>
+                  !startDateValue ||
+                  value >= startDateValue ||
+                  "End date cannot be before start date",
+              })}
             />
+            {errors.end_date && (
+              <p className="text-xs text-destructive mt-1">
+                {errors.end_date.message as string}
+              </p>
+            )}
           </div>
 
           {!allDay && (
@@ -568,8 +662,29 @@ export default function EventSheet({
               <Input
                 type="time"
                 id="end_time"
-                {...register("end_time", { required: !allDay })}
+                aria-invalid={errors.end_time ? "true" : "false"}
+                {...register("end_time", {
+                  required: "End time is required",
+                  validate: (value) => {
+                    if (!value) return "End time is required";
+                    if (
+                      startDateValue &&
+                      endDateValue &&
+                      startTimeValue &&
+                      startDateValue === endDateValue &&
+                      value <= startTimeValue
+                    ) {
+                      return "End time must be after the start time";
+                    }
+                    return true;
+                  },
+                })}
               />
+              {errors.end_time && (
+                <p className="text-xs text-destructive mt-1">
+                  {errors.end_time.message as string}
+                </p>
+              )}
             </div>
           )}
 
