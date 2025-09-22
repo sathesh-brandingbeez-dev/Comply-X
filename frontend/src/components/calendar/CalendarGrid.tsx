@@ -2,6 +2,12 @@
 
 import React, { useMemo } from "react";
 import type { CalendarEvent } from "@/types/calendar";
+import {
+  formatInTimeZone,
+  resolveTimeZone,
+  toDateOnly,
+  todayInTimeZone,
+} from "@/lib/timezone";
 import EventCard from "./EventCard";
 
 type View = "month" | "week" | "day" | "agenda";
@@ -32,16 +38,18 @@ export default function CalendarGrid({
     return out;
   }, [start, end]);
 
+  const viewerTimeZone = resolveTimeZone();
+
   const byDay = useMemo(() => {
     const map: Record<string, CalendarEvent[]> = {};
     for (const ev of events) {
-      const key = new Date(ev.start_at).toISOString().slice(0, 10);
+      const key = toDateOnly(ev.start_at, ev.tz ?? viewerTimeZone);
       (map[key] ||= []).push(ev);
     }
     return map;
-  }, [events]);
+  }, [events, viewerTimeZone]);
 
-  const todayStr = new Date().toISOString().slice(0, 10);
+  const todayStr = todayInTimeZone(viewerTimeZone);
 
   const agendaSorted = useMemo(
     () =>
@@ -76,7 +84,7 @@ export default function CalendarGrid({
       }}
     >
       {days.map((d) => {
-        const key = d.toISOString().slice(0, 10);
+        const key = toDateOnly(d.toISOString(), viewerTimeZone);
         const dayEvents = byDay[key] || [];
         const isToday = key === todayStr;
         return (
@@ -94,10 +102,12 @@ export default function CalendarGrid({
                 >
                   <div className="text-sm font-medium">{ev.title}</div>
                   <div className="text-xs text-muted-foreground">
-                    {new Date(ev.start_at).toLocaleTimeString([], {
-                      hour: "2-digit",
-                      minute: "2-digit",
-                    })}
+                    {ev.all_day
+                      ? "All day"
+                      : formatInTimeZone(ev.start_at, ev.tz ?? viewerTimeZone, {
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })}
                     {" – "}
                     {ev.type} • {ev.priority}
                   </div>
