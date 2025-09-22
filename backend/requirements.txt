@@ -23,3 +23,5 @@ fastapi-mail==1.4.1
 python-dateutil
 tzdata
 python-dotenv==1.0.1
+
+openai>=1.40.0
