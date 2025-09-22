@@ -86,10 +86,11 @@ type EventFormValues = {
 };
 
 type InitialEvent = Partial<
-  Omit<EventUpsertInput, "reminders" | "tz" | "attendees"> & {
+  Omit<EventUpsertInput, "reminders" | "attendees"> & {
     id?: string | number;
     reminders?: number[];
     time_zone?: string;
+    tz?: string;
     attendees_required?: string[];
     attendees_optional?: string[];
   }
@@ -103,26 +104,86 @@ type Props = {
   upsertEvent?: (payload: EventUpsertInput) => Promise<unknown>;
 };
 
-function toDateOnly(iso: string): string {
-  const d = new Date(iso);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(
-    d.getDate(),
-  ).padStart(2, "0")}`;
+function resolveTimeZone(tz?: string | null): string {
+  return tz && tz.trim()
+    ? tz
+    : Intl.DateTimeFormat().resolvedOptions().timeZone;
 }
-function toTimeOnly(iso: string): string {
-  const d = new Date(iso);
-  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+
+function getPartsInZone(iso: string, tz?: string | null) {
+  const formatter = new Intl.DateTimeFormat("en-US", {
+    timeZone: resolveTimeZone(tz),
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  });
+  const parts = formatter.formatToParts(new Date(iso));
+  const map: Record<string, string> = {};
+  for (const part of parts) {
+    if (part.type !== "literal") {
+      map[part.type] = part.value;
+    }
+  }
+  return {
+    year: map.year,
+    month: map.month,
+    day: map.day,
+    hour: map.hour,
+    minute: map.minute,
+  };
 }
-function joinDateTime(
+
+function toDateOnly(iso: string, tz?: string | null): string {
+  const { year, month, day } = getPartsInZone(iso, tz);
+  return `${year}-${month}-${day}`;
+}
+
+function toTimeOnly(iso: string, tz?: string | null): string {
+  const { hour, minute } = getPartsInZone(iso, tz);
+  return `${hour}:${minute}`;
+}
+
+function zonedDateTimeToUtc(
   dateStr: string,
   timeStr: string | undefined,
-  _tz?: string,
+  tz?: string | null,
   allDay?: boolean,
 ): string {
-  const base = allDay
-    ? `${dateStr}T00:00:00`
-    : `${dateStr}T${timeStr ?? "00:00"}:00`;
-  return new Date(base).toISOString();
+  const timeZone = resolveTimeZone(tz);
+  const [year, month, day] = dateStr.split("-").map(Number);
+  const [hour, minute] = (timeStr ?? "00:00").split(":").map(Number);
+  const baseUtc = new Date(Date.UTC(year, (month || 1) - 1, day || 1, allDay ? 0 : hour || 0, allDay ? 0 : minute || 0, 0));
+  const formatter = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  });
+  const parts = formatter.formatToParts(baseUtc);
+  const map: Record<string, string> = {};
+  for (const part of parts) {
+    if (part.type !== "literal") {
+      map[part.type] = part.value;
+    }
+  }
+  const zonedAsUtc = Date.UTC(
+    Number(map.year),
+    Number(map.month) - 1,
+    Number(map.day),
+    Number(map.hour),
+    Number(map.minute),
+    Number(map.second),
+  );
+  const offsetMinutes = (zonedAsUtc - baseUtc.getTime()) / (60 * 1000);
+  return new Date(baseUtc.getTime() - offsetMinutes * 60 * 1000).toISOString();
 }
 
 const REMINDER_OPTIONS_MIN = [15, 30, 60, 24 * 60, 7 * 24 * 60] as const;
@@ -139,6 +200,9 @@ export default function EventSheet({
       const isAllDay = Boolean(initial.all_day);
       const startISO = initial.start_at ?? new Date().toISOString();
       const endISO = initial.end_at ?? new Date().toISOString();
+      const initialTz = resolveTimeZone(
+        initial.time_zone ?? ("tz" in initial ? initial.tz : undefined),
+      );
 
       return {
         title: initial.title ?? "",
@@ -149,12 +213,11 @@ export default function EventSheet({
         priority: (initial.priority as Priority) ?? "Medium",
         status: (initial.status as EventStatus) ?? "Scheduled",
         all_day: isAllDay,
-        start_date: toDateOnly(startISO),
-        start_time: isAllDay ? undefined : toTimeOnly(startISO),
-        end_date: toDateOnly(endISO),
-        end_time: isAllDay ? undefined : toTimeOnly(endISO),
-        time_zone:
-          initial.time_zone ?? Intl.DateTimeFormat().resolvedOptions().timeZone,
+        start_date: toDateOnly(startISO, initialTz),
+        start_time: isAllDay ? undefined : toTimeOnly(startISO, initialTz),
+        end_date: toDateOnly(endISO, initialTz),
+        end_time: isAllDay ? undefined : toTimeOnly(endISO, initialTz),
+        time_zone: initialTz,
         attendees_required_csv: (initial.attendees_required ?? []).join(", "),
         attendees_optional_csv: (initial.attendees_optional ?? []).join(", "),
         reminders: initial.reminders ?? [],
@@ -175,7 +238,7 @@ export default function EventSheet({
       start_time: "10:00",
       end_date: today,
       end_time: "11:00",
-      time_zone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      time_zone: resolveTimeZone(),
       attendees_required_csv: "",
       attendees_optional_csv: "",
       reminders: [],
@@ -284,13 +347,13 @@ export default function EventSheet({
   };
 
   const onSubmit: SubmitHandler<EventFormValues> = async (values) => {
-    const startISO = joinDateTime(
+    const startISO = zonedDateTimeToUtc(
       values.start_date,
       values.start_time,
       values.time_zone,
       values.all_day,
     );
-    const endISO = joinDateTime(
+    const endISO = zonedDateTimeToUtc(
       values.end_date,
       values.end_time,
       values.time_zone,
