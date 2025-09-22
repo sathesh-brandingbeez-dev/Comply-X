@@ -272,6 +272,7 @@ export default function EventSheet({
   const [actionItemsError, setActionItemsError] = React.useState<string | null>(
     null,
   );
+  const [isDeleting, setIsDeleting] = React.useState(false);
 
   React.useEffect(() => {
     if (!open) {
@@ -413,6 +414,25 @@ export default function EventSheet({
 
     onSaved();
     onOpenChange(false);
+  };
+
+  const handleDelete = async () => {
+    if (!initial?.id || isDeleting) return;
+    const confirmed = window.confirm(
+      "Are you sure you want to erase this meeting? This action cannot be undone.",
+    );
+    if (!confirmed) return;
+
+    setIsDeleting(true);
+    try {
+      await api(`/api/calendar/events/${initial.id}`, { method: "DELETE" });
+      onSaved();
+      onOpenChange(false);
+    } catch (error) {
+      console.error("Failed to delete calendar event", error);
+    } finally {
+      setIsDeleting(false);
+    }
   };
 
   return (
@@ -770,7 +790,17 @@ export default function EventSheet({
             />
           </div>
 
-          <DialogFooter className="md:col-span-2">
+          <DialogFooter className="md:col-span-2 gap-2">
+            {initial?.id && (
+              <Button
+                type="button"
+                variant="destructive"
+                onClick={handleDelete}
+                disabled={isSubmitting || isDeleting}
+              >
+                {isDeleting ? "Erasing…" : "Erase Meeting"}
+              </Button>
+            )}
             <Button
               type="button"
               variant="outline"
