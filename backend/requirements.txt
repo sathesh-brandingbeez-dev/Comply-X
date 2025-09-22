@@ -18,3 +18,4 @@ python-dateutil
 tzdata
 openai>=1.40.0
 python-dotenv==1.0.1
+gunicorn==21.2.0
