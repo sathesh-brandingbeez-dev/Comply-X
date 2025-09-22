@@ -118,6 +118,9 @@ app = FastAPI(
 
 ALLOWED_ORIGINS = [
     "https://comply-x-lime.vercel.app",
+    "https://comply-7xj1iks1y-saheshkumarbrandingbeezs-projects.vercel.app",
+    "https://comply-x-git-main-saheshkumarbrandingbeezs-projects.vercel.app",
+    "https://comply-x-1.onrender.com",
     "http://localhost:3000",
     "http://127.0.0.1:3000",
     "http://localhost:5173",
