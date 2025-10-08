@@ -41,6 +41,7 @@ import {
   Undo2
 } from 'lucide-react'
 import { DocumentViewer } from './document-viewer'
+import { buildApiUrl } from '@/lib/api'
 
 interface Document {
   id: number
@@ -125,8 +126,6 @@ export function DocumentEditor({
   const [versions, setVersions] = useState<DocumentVersionInfo[]>([])
   const [versionsLoading, setVersionsLoading] = useState(false)
   const [versionsError, setVersionsError] = useState<string | null>(null)
-  const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, '')
-
   const documentTypes = [
     { value: 'policy', label: 'Policy' },
     { value: 'procedure', label: 'Procedure' },
@@ -223,13 +222,13 @@ export function DocumentEditor({
 
   const fetchDocumentContent = useCallback(async () => {
     const token = getAuthToken()
-    if (!token || !document || !API_BASE_URL) return
+    if (!token || !document) return
 
     setContentLoading(true)
     setContentError(null)
 
     try {
-      const response = await fetch(`${API_BASE_URL}/api/documents/${document.id}/content`, {
+      const response = await fetch(buildApiUrl(`/documents/${document.id}/content`), {
         headers: {
           'Authorization': `Bearer ${token}`
         }
@@ -251,17 +250,17 @@ export function DocumentEditor({
     } finally {
       setContentLoading(false)
     }
-  }, [API_BASE_URL, document])
+  }, [document])
 
   const fetchDocumentVersions = useCallback(async () => {
     const token = getAuthToken()
-    if (!token || !document || !API_BASE_URL) return
+    if (!token || !document) return
 
     setVersionsLoading(true)
     setVersionsError(null)
 
     try {
-      const response = await fetch(`${API_BASE_URL}/api/documents/${document.id}/versions`, {
+      const response = await fetch(buildApiUrl(`/documents/${document.id}/versions`), {
         headers: {
           'Authorization': `Bearer ${token}`
         }
@@ -283,7 +282,7 @@ export function DocumentEditor({
     } finally {
       setVersionsLoading(false)
     }
-  }, [API_BASE_URL, document])
+  }, [document])
 
   useEffect(() => {
     if (isOpen && document) {
@@ -293,7 +292,7 @@ export function DocumentEditor({
   }, [isOpen, document?.id, fetchDocumentContent, fetchDocumentVersions])
 
   const handleContentSave = async () => {
-    if (!document || !API_BASE_URL) return
+    if (!document) return
     if (!supportsContentEditing || !canEditContent) return
 
     const token = getAuthToken()
@@ -306,7 +305,7 @@ export function DocumentEditor({
     setContentError(null)
 
     try {
-      const response = await fetch(`${API_BASE_URL}/api/documents/${document.id}/content`, {
+      const response = await fetch(buildApiUrl(`/documents/${document.id}/content`), {
         method: 'PUT',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -339,7 +338,7 @@ export function DocumentEditor({
   }
 
   const handleVersionDownload = async (versionId: number) => {
-    if (!document || !API_BASE_URL) return
+    if (!document) return
     const token = getAuthToken()
     if (!token) {
       setVersionsError('No authentication token found')
@@ -349,7 +348,7 @@ export function DocumentEditor({
     setVersionsError(null)
 
     try {
-      const response = await fetch(`${API_BASE_URL}/api/documents/${document.id}/versions/${versionId}/download`, {
+      const response = await fetch(buildApiUrl(`/documents/${document.id}/versions/${versionId}/download`), {
         headers: {
           'Authorization': `Bearer ${token}`
         }
@@ -379,15 +378,18 @@ export function DocumentEditor({
 
   const fetchTemplateSuggestions = async () => {
     const token = getAuthToken()
-    if (!token || !document || !API_BASE_URL) return
+    if (!token || !document) return
 
     try {
-      const response = await fetch(`${API_BASE_URL}/api/documents/ai/editor/templates?document_type=${encodeURIComponent(document.document_type)}`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`
+      const response = await fetch(
+        buildApiUrl(`/documents/ai/editor/templates?document_type=${encodeURIComponent(document.document_type)}`),
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
         }
-      })
+      )
 
       if (response.ok) {
         const data = await response.json()
@@ -401,14 +403,14 @@ export function DocumentEditor({
 
   const fetchWorkflowInsights = async () => {
     const token = getAuthToken()
-    if (!token || !document || !API_BASE_URL) return
+    if (!token || !document) return
 
     setWorkflowLoading(true)
     setWorkflowError(null)
 
     try {
       const [assignRes, progressRes, timelineRes] = await Promise.all([
-        fetch(`${API_BASE_URL}/api/documents/ai/workflow/assign`, {
+        fetch(buildApiUrl('/documents/ai/workflow/assign'), {
           method: 'POST',
           headers: {
             'Authorization': `Bearer ${token}`,
@@ -416,7 +418,7 @@ export function DocumentEditor({
           },
           body: JSON.stringify({ document_id: document.id })
         }),
-        fetch(`${API_BASE_URL}/api/documents/ai/workflow/progress`, {
+        fetch(buildApiUrl('/documents/ai/workflow/progress'), {
           method: 'POST',
           headers: {
             'Authorization': `Bearer ${token}`,
@@ -424,7 +426,7 @@ export function DocumentEditor({
           },
           body: JSON.stringify({ document_id: document.id })
         }),
-        fetch(`${API_BASE_URL}/api/documents/ai/workflow/timeline`, {
+        fetch(buildApiUrl('/documents/ai/workflow/timeline'), {
           method: 'POST',
           headers: {
             'Authorization': `Bearer ${token}`,
@@ -471,14 +473,14 @@ export function DocumentEditor({
 
   const runAICompletion = async () => {
     const token = getAuthToken()
-    if (!token || !API_BASE_URL) return
+    if (!token) return
 
     setAiCompletionLoading(true)
     setAiCompletion(null)
     setAiCompletionTips([])
 
     try {
-      const response = await fetch(`${API_BASE_URL}/api/documents/ai/editor/completion`, {
+      const response = await fetch(buildApiUrl('/documents/ai/editor/completion'), {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -504,14 +506,14 @@ export function DocumentEditor({
 
   const runGrammarCheck = async () => {
     const token = getAuthToken()
-    if (!token || !API_BASE_URL) return
+    if (!token) return
 
     setAiGrammarLoading(true)
     setAiGrammarIssues([])
     setAiGrammarSummary(null)
 
     try {
-      const response = await fetch(`${API_BASE_URL}/api/documents/ai/editor/grammar`, {
+      const response = await fetch(buildApiUrl('/documents/ai/editor/grammar'), {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -537,14 +539,14 @@ export function DocumentEditor({
 
   const runNumbering = async () => {
     const token = getAuthToken()
-    if (!token || !outlineInput.trim() || !API_BASE_URL) return
+    if (!token || !outlineInput.trim()) return
 
     setNumberingLoading(true)
     setNumberedSections([])
     setNumberingNotes([])
 
     try {
-      const response = await fetch(`${API_BASE_URL}/api/documents/ai/editor/numbering`, {
+      const response = await fetch(buildApiUrl('/documents/ai/editor/numbering'), {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,

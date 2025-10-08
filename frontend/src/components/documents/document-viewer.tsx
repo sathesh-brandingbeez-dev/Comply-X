@@ -12,7 +12,7 @@ import {
   ExternalLink
 } from 'lucide-react'
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'https://comply-x.onrender.com'
+import { buildApiUrl } from '@/lib/api'
 
 interface DocumentViewerProps {
   documentId: number
@@ -85,7 +85,8 @@ export function DocumentViewer({
       }
 
       // Create blob URL for viewing
-      const response = await fetch(`${API_BASE_URL}/api/documents/${documentId}/download`, {
+      const downloadUrl = buildApiUrl(`/documents/${documentId}/download`)
+      const response = await fetch(downloadUrl, {
         headers: { 'Authorization': `Bearer ${token}` }
       })
 
@@ -128,7 +129,8 @@ export function DocumentViewer({
       const token = localStorage.getItem('auth_token')
       if (!token) return
 
-      const response = await fetch(`${API_BASE_URL}/api/documents/${documentId}/download`, {
+      const downloadUrl = buildApiUrl(`/documents/${documentId}/download`)
+      const response = await fetch(downloadUrl, {
         headers: { 'Authorization': `Bearer ${token}` }
       })
 
