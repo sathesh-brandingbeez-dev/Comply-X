@@ -12,7 +12,7 @@ import {
   ExternalLink
 } from 'lucide-react'
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'https://comply-x.onrender.com'
+import { buildApiUrl, getStoredAuthToken } from '@/lib/api'
 
 interface DocumentViewerProps {
   documentId: number
@@ -78,14 +78,15 @@ export function DocumentViewer({
     setIsDocxConverting(fileExtension === 'docx')
 
     try {
-      const token = localStorage.getItem('auth_token')
+      const token = getStoredAuthToken()
       if (!token) {
         setError('No authentication token found')
         return
       }
 
       // Create blob URL for viewing
-      const response = await fetch(`${API_BASE_URL}/api/documents/${documentId}/download`, {
+      const downloadUrl = buildApiUrl(`/documents/${documentId}/download`)
+      const response = await fetch(downloadUrl, {
         headers: { 'Authorization': `Bearer ${token}` }
       })
 
@@ -125,10 +126,11 @@ export function DocumentViewer({
 
   const handleDownload = async () => {
     try {
-      const token = localStorage.getItem('auth_token')
+      const token = getStoredAuthToken()
       if (!token) return
 
-      const response = await fetch(`${API_BASE_URL}/api/documents/${documentId}/download`, {
+      const downloadUrl = buildApiUrl(`/documents/${documentId}/download`)
+      const response = await fetch(downloadUrl, {
         headers: { 'Authorization': `Bearer ${token}` }
       })
 

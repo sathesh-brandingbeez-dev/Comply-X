@@ -228,7 +228,7 @@ function joinUrl(base: string, tail: string): string {
   return `${base}${sep}${t}`;
 }
 
-function getAuthToken(): string | null {
+export function getStoredAuthToken(): string | null {
   if (typeof window === "undefined") return null;
   try {
     return (
@@ -264,6 +264,14 @@ function buildUrl(path: string): string {
   return new URL(p, API_BASE).toString();
 }
 
+/**
+ * Resolve an absolute URL for an API endpoint while respecting the configured
+ * base. Accepts either `/foo` style paths or already absolute URLs.
+ */
+export function buildApiUrl(path: string): string {
+  return buildUrl(path);
+}
+
 async function parseJsonSafely<T>(res: Response): Promise<T> {
   const text = await res.text();
   if (!text) return null as unknown as T;
@@ -292,7 +300,7 @@ export async function api<T>(path: string, init: FetchOptions = {}): Promise<T> 
   if (hasBody && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
   if (!headers.has("Accept")) headers.set("Accept", "application/json");
 
-  const token = getAuthToken();
+  const token = getStoredAuthToken();
   if (token && !headers.has("Authorization")) headers.set("Authorization", `Bearer ${token}`);
 
   const url = buildUrl(path);

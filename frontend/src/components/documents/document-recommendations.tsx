@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Loader2, RefreshCw, Sparkles } from 'lucide-react'
-import { api } from '@/lib/api'
+import { api, getStoredAuthToken } from '@/lib/api'
 
 interface DocumentSummary {
   id: number
@@ -38,7 +38,7 @@ export function DocumentRecommendations() {
   const [summary, setSummary] = useState<string | null>(null)
 
   const fetchRecommendations = async () => {
-    const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null
+    const token = getStoredAuthToken()
     if (!token) {
       setError('Authentication required to load recommendations')
       return
@@ -48,7 +48,10 @@ export function DocumentRecommendations() {
     setError(null)
 
     try {
-      const data = await api<RecommendationResponse>('/documents/ai/recommendations')
+      const data = await api<RecommendationResponse>(
+        '/documents/ai/recommendations',
+        { timeoutMs: 60000 }
+      )
       setRecommendations(data.recommendations || [])
       setDocuments(data.documents || [])
       setSummary(data.summary ?? null)

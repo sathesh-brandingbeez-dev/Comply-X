@@ -38,6 +38,7 @@ import {
   ChevronRight,
   X
 } from 'lucide-react'
+import { api, buildApiUrl, getStoredAuthToken } from '@/lib/api'
 import { DocumentEditor } from './document-editor'
 
 interface Document {
@@ -75,8 +76,6 @@ export function DocumentsList({
 }: DocumentsListProps) {
   const [selectedDocument, setSelectedDocument] = useState<Document | null>(null)
   const [editingDocument, setEditingDocument] = useState<Document | null>(null)
-  const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL;
-
   const formatFileSize = (bytes: number) => {
     if (bytes === 0) return '0 Bytes'
     const k = 1024
@@ -130,20 +129,20 @@ export function DocumentsList({
 
   const handleDownload = async (doc: Document) => {
     try {
-      const token = localStorage.getItem('auth_token')
+      const token = getStoredAuthToken()
       if (!token) {
         console.error('No authentication token found')
         return
       }
-      
-      const response = await fetch(`${API_BASE_URL}/api/documents/${doc.id}/download`, {
+
+      const downloadUrl = buildApiUrl(`/documents/${doc.id}/download`)
+      const response = await fetch(downloadUrl, {
         headers: {
           'Authorization': `Bearer ${token}`
         }
       })
   
       if (response.ok) {
-        console.log('response:-', response)
         const blob = await response.blob()
         const url = window.URL.createObjectURL(blob)
         const a = document.createElement('a')
@@ -167,28 +166,22 @@ export function DocumentsList({
     if (!editingDocument) return
     
     try {
-      const token = localStorage.getItem('auth_token')
+      const token = getStoredAuthToken()
       if (!token) {
         console.error('No authentication token found')
         return
       }
-      
-      const response = await fetch(`${API_BASE_URL}/api/documents/${editingDocument.id}`, {
+
+      await api(`/documents/${editingDocument.id}`, {
         method: 'PUT',
         headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
+          Authorization: `Bearer ${token}`
         },
         body: JSON.stringify(updatedDocument)
       })
 
-      if (response.ok) {
-        onRefresh() // Refresh the documents list
-        setEditingDocument(null)
-      } else {
-        console.error('Failed to update document')
-        throw new Error('Failed to update document')
-      }
+      onRefresh() // Refresh the documents list
+      setEditingDocument(null)
     } catch (error) {
       console.error('Error updating document:', error)
       throw error
@@ -201,24 +194,20 @@ export function DocumentsList({
     }
 
     try {
-      const token = localStorage.getItem('auth_token')
+      const token = getStoredAuthToken()
       if (!token) {
         console.error('No authentication token found')
         return
       }
-      
-      const response = await fetch(`${API_BASE_URL}/api/documents/${document.id}`, {
+
+      await api(`/documents/${document.id}`, {
         method: 'DELETE',
         headers: {
-          'Authorization': `Bearer ${token}`
+          Authorization: `Bearer ${token}`
         }
       })
 
-      if (response.ok) {
-        onRefresh()
-      } else {
-        console.error('Failed to delete document')
-      }
+      onRefresh()
     } catch (error) {
       console.error('Error deleting document:', error)
     }
