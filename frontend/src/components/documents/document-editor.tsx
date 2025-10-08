@@ -1,6 +1,7 @@
 "use client"
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
+import type { ClipboardEvent as ReactClipboardEvent, ComponentType } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -38,10 +39,20 @@ import {
   Users,
   Clock,
   History,
-  Undo2
+  Undo2,
+  Bold,
+  Italic,
+  Underline,
+  Strikethrough,
+  List,
+  AlignLeft,
+  AlignCenter,
+  AlignRight,
+  AlignJustify
 } from 'lucide-react'
 import { DocumentViewer } from './document-viewer'
 import { buildApiUrl } from '@/lib/api'
+import { cn } from '@/lib/utils'
 
 interface Document {
   id: number
@@ -79,6 +90,168 @@ interface DocumentEditorProps {
   onSave: (updatedDocument: Partial<Document>) => Promise<void>
   onDownload: () => void
   onRefresh?: () => void
+}
+
+const DOCX_PREVIEW_STYLES = `
+  .docx-preview { color: #111827; line-height: 1.6; font-size: 0.95rem; }
+  .docx-preview h1 { font-size: 1.75rem; margin-bottom: 0.75rem; }
+  .docx-preview h2 { font-size: 1.5rem; margin-bottom: 0.75rem; }
+  .docx-preview h3 { font-size: 1.25rem; margin-bottom: 0.5rem; }
+  .docx-preview p { margin-bottom: 0.75rem; }
+  .docx-preview table { border-collapse: collapse; width: 100%; margin-bottom: 1rem; }
+  .docx-preview table, .docx-preview th, .docx-preview td { border: 1px solid #d1d5db; }
+  .docx-preview th, .docx-preview td { padding: 0.5rem; text-align: left; vertical-align: top; }
+  .docx-preview ul, .docx-preview ol { margin: 0.5rem 0 0.5rem 1.5rem; }
+  .docx-preview strong { font-weight: 600; }
+  .docx-preview em { font-style: italic; }
+  .docx-preview code { background: #f3f4f6; padding: 0.25rem 0.375rem; border-radius: 0.375rem; }
+`
+
+const HTML_CONTENT_REGEX = /<\/?[a-z][\s\S]*>/i
+
+const convertPlainTextToHtml = (text: string) => {
+  if (!text) {
+    return ''
+  }
+
+  const escaped = text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+
+  return escaped
+    .split(/\n{2,}/)
+    .map((paragraph) => `<p>${paragraph.replace(/\n/g, '<br />')}</p>`)
+    .join('')
+}
+
+type FormattingAction = {
+  command: string
+  label: string
+  icon: ComponentType<{ className?: string }>
+  value?: string
+}
+
+const formattingActions: FormattingAction[] = [
+  { command: 'bold', label: 'Bold', icon: Bold },
+  { command: 'italic', label: 'Italic', icon: Italic },
+  { command: 'underline', label: 'Underline', icon: Underline },
+  { command: 'strikeThrough', label: 'Strikethrough', icon: Strikethrough },
+  { command: 'insertUnorderedList', label: 'Bulleted list', icon: List },
+  { command: 'insertOrderedList', label: 'Numbered list', icon: ListOrdered },
+  { command: 'justifyLeft', label: 'Align left', icon: AlignLeft },
+  { command: 'justifyCenter', label: 'Align center', icon: AlignCenter },
+  { command: 'justifyRight', label: 'Align right', icon: AlignRight },
+  { command: 'justifyFull', label: 'Justify', icon: AlignJustify },
+]
+
+function DocumentContentToolbar({ disabled }: { disabled: boolean }) {
+  const applyCommand = (command: string, value?: string) => {
+    if (disabled) return
+    document.execCommand(command, false, value ?? '')
+  }
+
+  return (
+    <div className="flex flex-wrap gap-2">
+      {formattingActions.map(({ command, icon: Icon, label, value }) => (
+        <Button
+          key={`${command}-${value ?? 'default'}`}
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => applyCommand(command, value)}
+          disabled={disabled}
+          className="flex items-center gap-1"
+        >
+          <Icon className="h-4 w-4" />
+          <span className="sr-only">{label}</span>
+        </Button>
+      ))}
+    </div>
+  )
+}
+
+interface DocumentContentEditorProps {
+  value: string
+  onChange: (value: string) => void
+  disabled: boolean
+  fileExtension?: string
+}
+
+function DocumentContentEditor({
+  value,
+  onChange,
+  disabled,
+  fileExtension,
+}: DocumentContentEditorProps) {
+  const editorRef = useRef<HTMLDivElement | null>(null)
+
+  const normalizedValue = useMemo(() => {
+    if (!value) {
+      return ''
+    }
+
+    if (HTML_CONTENT_REGEX.test(value)) {
+      return value
+    }
+
+    return convertPlainTextToHtml(value)
+  }, [value])
+
+  useEffect(() => {
+    const editor = editorRef.current
+    if (!editor) return
+
+    if (editor.innerHTML !== normalizedValue) {
+      editor.innerHTML = normalizedValue
+    }
+  }, [normalizedValue])
+
+  const handleInput = () => {
+    if (!editorRef.current) return
+    onChange(editorRef.current.innerHTML)
+  }
+
+  const handlePaste = (event: ReactClipboardEvent<HTMLDivElement>) => {
+    if (disabled) return
+    const clipboardData = event.clipboardData
+    if (!clipboardData) return
+
+    event.preventDefault()
+    const htmlData = clipboardData.getData('text/html')
+    const textData = clipboardData.getData('text/plain')
+
+    if (htmlData) {
+      document.execCommand('insertHTML', false, htmlData)
+    } else if (textData) {
+      document.execCommand('insertHTML', false, convertPlainTextToHtml(textData))
+    }
+  }
+
+  return (
+    <div className="space-y-2">
+      {(fileExtension === 'docx' || HTML_CONTENT_REGEX.test(value)) && (
+        <style>{DOCX_PREVIEW_STYLES}</style>
+      )}
+      <div
+        ref={editorRef}
+        className={cn(
+          'min-h-[400px] rounded-lg border bg-background shadow-sm transition-shadow focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
+          'prose prose-sm max-w-none overflow-auto',
+          fileExtension === 'docx' || HTML_CONTENT_REGEX.test(value)
+            ? 'docx-preview px-6 py-4 bg-white'
+            : 'px-4 py-3 whitespace-pre-wrap font-mono'
+        )}
+        contentEditable={!disabled}
+        suppressContentEditableWarning
+        onInput={handleInput}
+        onPaste={handlePaste}
+        role="textbox"
+        aria-label="Document content editor"
+        spellCheck={false}
+      />
+    </div>
+  )
 }
 
 export function DocumentEditor({
@@ -122,6 +295,10 @@ export function DocumentEditor({
   const [contentSaving, setContentSaving] = useState(false)
   const [contentChangeSummary, setContentChangeSummary] = useState('')
   const [viewerRefreshKey, setViewerRefreshKey] = useState(0)
+  const fileExtension = useMemo(
+    () => document?.filename?.split('.').pop()?.toLowerCase() ?? '',
+    [document?.filename]
+  )
   const [contentTab, setContentTab] = useState<'preview' | 'edit'>('preview')
   const [versions, setVersions] = useState<DocumentVersionInfo[]>([])
   const [versionsLoading, setVersionsLoading] = useState(false)
@@ -943,14 +1120,12 @@ export function DocumentEditor({
                             </AlertDescription>
                           </Alert>
                         )}
-                        <Textarea
+                        <DocumentContentToolbar disabled={!isEditing} />
+                        <DocumentContentEditor
                           value={content}
-                          onChange={(event) => setContent(event.target.value)}
-                          rows={12}
-                          className="font-mono whitespace-pre"
+                          onChange={setContent}
                           disabled={!isEditing}
-                          wrap="off"
-                          style={{ tabSize: 4 }}
+                          fileExtension={fileExtension}
                         />
                         <div className="flex flex-wrap gap-2">
                           <Button
