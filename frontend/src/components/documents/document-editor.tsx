@@ -314,6 +314,7 @@ export function DocumentEditor({
   const [onlyOfficeLoading, setOnlyOfficeLoading] = useState(false)
   const [onlyOfficeError, setOnlyOfficeError] = useState<string | null>(null)
   const [onlyOfficeUnsavedChanges, setOnlyOfficeUnsavedChanges] = useState(false)
+  const wasEditingRef = useRef(isEditing)
   const [contentTab, setContentTab] = useState<'preview' | 'edit'>('preview')
   const supportsOnlyOfficeEditing = useMemo(() => {
     if (!fileExtension) return false
@@ -570,11 +571,17 @@ export function DocumentEditor({
   }, [isEditing, onlyOfficeSession])
 
   useEffect(() => {
-    if (!isEditing && supportsOnlyOfficeEditing) {
-      setViewerRefreshKey(prev => prev + 1)
-      fetchDocumentVersions()
-      onRefresh?.()
+    const wasEditing = wasEditingRef.current
+
+    if (wasEditing && !isEditing) {
+      if (supportsOnlyOfficeEditing) {
+        setViewerRefreshKey(prev => prev + 1)
+        fetchDocumentVersions()
+        onRefresh?.()
+      }
     }
+
+    wasEditingRef.current = isEditing
   }, [isEditing, supportsOnlyOfficeEditing, fetchDocumentVersions, onRefresh])
 
   const handleContentSave = async () => {
