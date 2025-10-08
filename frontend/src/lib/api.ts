@@ -264,6 +264,14 @@ function buildUrl(path: string): string {
   return new URL(p, API_BASE).toString();
 }
 
+/**
+ * Resolve an absolute URL for an API endpoint while respecting the configured
+ * base. Accepts either `/foo` style paths or already absolute URLs.
+ */
+export function buildApiUrl(path: string): string {
+  return buildUrl(path);
+}
+
 async function parseJsonSafely<T>(res: Response): Promise<T> {
   const text = await res.text();
   if (!text) return null as unknown as T;
