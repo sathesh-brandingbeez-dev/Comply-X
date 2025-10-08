@@ -273,7 +273,10 @@ export function DocumentEditor({
       }
 
       const data = await response.json()
-      setVersions(data || [])
+      const versionList: DocumentVersionInfo[] = Array.isArray(data)
+        ? data.slice().sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+        : []
+      setVersions(versionList)
     } catch (err: any) {
       setVersionsError(err.message || 'Failed to load document versions')
       setVersions([])
@@ -372,6 +375,7 @@ export function DocumentEditor({
   const isContentDirty = supportsContentEditing && canEditContent && content !== initialContent
   const editTabDisabled = !supportsContentEditing
   const formatVersionDate = (value: string) => new Date(value).toLocaleString()
+  const [latestVersion, ...previousVersions] = versions
 
   const fetchTemplateSuggestions = async () => {
     const token = getAuthToken()
@@ -797,22 +801,52 @@ export function DocumentEditor({
                     Loading versions...
                   </div>
                 ) : versions.length > 0 ? (
-                  <div className="space-y-3">
-                    {versions.map((version) => (
-                      <div key={version.id} className="rounded border p-3 space-y-1 bg-muted/30">
+                  <div className="space-y-4">
+                    {latestVersion && (
+                      <div className="rounded border border-primary/30 bg-primary/5 p-3 space-y-1">
                         <div className="flex items-center justify-between text-sm font-medium">
-                          <span>Version {version.version}</span>
-                          <Button variant="outline" size="sm" onClick={() => handleVersionDownload(version.id)}>
+                          <span>
+                            Version {latestVersion.version}
+                            <span className="ml-2 rounded-full bg-primary/10 px-2 py-0.5 text-xs font-semibold text-primary">
+                              Latest
+                            </span>
+                          </span>
+                          <Button variant="outline" size="sm" onClick={() => handleVersionDownload(latestVersion.id)}>
                             <Download className="h-3 w-3 mr-1" />
                             Download
                           </Button>
                         </div>
-                        <p className="text-xs text-muted-foreground">{formatVersionDate(version.created_at)}</p>
-                        {version.change_summary && (
-                          <p className="text-xs text-muted-foreground">Notes: {version.change_summary}</p>
+                        <p className="text-xs text-muted-foreground">{formatVersionDate(latestVersion.created_at)}</p>
+                        {latestVersion.change_summary && (
+                          <p className="text-xs text-muted-foreground">Notes: {latestVersion.change_summary}</p>
                         )}
                       </div>
-                    ))}
+                    )}
+
+                    {previousVersions.length > 0 ? (
+                      <div className="space-y-2">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                          Previous versions
+                        </p>
+                        <div className="space-y-3">
+                          {previousVersions.map((version) => (
+                            <div key={version.id} className="rounded border p-3 space-y-1 bg-muted/30">
+                              <div className="flex items-center justify-between text-sm font-medium">
+                                <span>Version {version.version}</span>
+                                <Button variant="outline" size="sm" onClick={() => handleVersionDownload(version.id)}>
+                                  <Download className="h-3 w-3 mr-1" />
+                                  Download
+                                </Button>
+                              </div>
+                              <p className="text-xs text-muted-foreground">{formatVersionDate(version.created_at)}</p>
+                              {version.change_summary && (
+                                <p className="text-xs text-muted-foreground">Notes: {version.change_summary}</p>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
                   </div>
                 ) : (
                   <p className="text-sm text-muted-foreground">
@@ -911,8 +945,10 @@ export function DocumentEditor({
                           value={content}
                           onChange={(event) => setContent(event.target.value)}
                           rows={12}
-                          className="font-mono"
+                          className="font-mono whitespace-pre"
                           disabled={!isEditing}
+                          wrap="off"
+                          style={{ tabSize: 4 }}
                         />
                         <div className="flex flex-wrap gap-2">
                           <Button

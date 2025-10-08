@@ -1,16 +1,15 @@
 "use client"
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { 
-  FileText, 
-  Download, 
-  AlertTriangle, 
-  Loader2, 
+import {
+  FileText,
+  Download,
+  AlertTriangle,
+  Loader2,
   Eye,
-  ExternalLink,
-  Maximize2
+  ExternalLink
 } from 'lucide-react'
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'https://comply-x.onrender.com'
@@ -35,6 +34,28 @@ export function DocumentViewer({
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [documentUrl, setDocumentUrl] = useState<string | null>(null)
+  const [docxHtml, setDocxHtml] = useState<string | null>(null)
+  const [isDocxConverting, setIsDocxConverting] = useState(false)
+  const [docxConversionError, setDocxConversionError] = useState<string | null>(null)
+
+  const fileExtension = useMemo(() => filename?.split('.').pop()?.toLowerCase() || '', [filename])
+  const docxPreviewStyles = useMemo(
+    () => `
+      .docx-preview { color: #111827; line-height: 1.6; font-size: 0.95rem; }
+      .docx-preview h1 { font-size: 1.75rem; margin-bottom: 0.75rem; }
+      .docx-preview h2 { font-size: 1.5rem; margin-bottom: 0.75rem; }
+      .docx-preview h3 { font-size: 1.25rem; margin-bottom: 0.5rem; }
+      .docx-preview p { margin-bottom: 0.75rem; }
+      .docx-preview table { border-collapse: collapse; width: 100%; margin-bottom: 1rem; }
+      .docx-preview table, .docx-preview th, .docx-preview td { border: 1px solid #d1d5db; }
+      .docx-preview th, .docx-preview td { padding: 0.5rem; text-align: left; vertical-align: top; }
+      .docx-preview ul, .docx-preview ol { margin: 0.5rem 0 0.5rem 1.5rem; }
+      .docx-preview strong { font-weight: 600; }
+      .docx-preview em { font-style: italic; }
+      .docx-preview code { background: #f3f4f6; padding: 0.25rem 0.375rem; border-radius: 0.375rem; }
+    `,
+    []
+  )
 
   useEffect(() => {
     loadDocument()
@@ -52,6 +73,9 @@ export function DocumentViewer({
   const loadDocument = async () => {
     setIsLoading(true)
     setError(null)
+    setDocxHtml(null)
+    setDocxConversionError(null)
+    setIsDocxConverting(fileExtension === 'docx')
 
     try {
       const token = localStorage.getItem('auth_token')
@@ -77,11 +101,24 @@ export function DocumentViewer({
         }
         return url
       })
-      
+
+      if (fileExtension === 'docx') {
+        try {
+          const arrayBuffer = await blob.arrayBuffer()
+          const mammoth = await import('mammoth/mammoth.browser')
+          const result = await mammoth.convertToHtml({ arrayBuffer })
+          setDocxHtml(result.value)
+        } catch (conversionError) {
+          console.error('Word preview conversion failed:', conversionError)
+          setDocxConversionError('Unable to render a live preview for this Word document. You can still download the file to review it locally.')
+        }
+      }
+
     } catch (error) {
       console.error('Error loading document:', error)
       setError('Failed to load document')
     } finally {
+      setIsDocxConverting(false)
       setIsLoading(false)
     }
   }
@@ -109,12 +146,8 @@ export function DocumentViewer({
     }
   }
 
-  const getFileExtension = () => {
-    return filename?.split('.').pop()?.toLowerCase() || ''
-  }
-
   const renderViewer = () => {
-    if (isLoading) {
+    if (isLoading || (fileExtension === 'docx' && isDocxConverting)) {
       return (
         <div className="flex items-center justify-center h-64 text-muted-foreground">
           <Loader2 className="h-8 w-8 animate-spin mr-2" />
@@ -135,29 +168,50 @@ export function DocumentViewer({
       )
     }
 
-    const extension = getFileExtension()
-    
     // PDF files
-    if (extension === 'pdf') {
+    if (fileExtension === 'pdf') {
       return (
         <div className="w-full h-full">
-          <embed 
-            src={documentUrl} 
-            type="application/pdf" 
-            width="100%" 
-            height="500"
-            className="border rounded-lg"
+          <iframe
+            src={`${documentUrl}#toolbar=0&navpanes=0`}
+            className="w-full h-[500px] border rounded-lg bg-white"
+            title={filename}
+            allowFullScreen
           />
         </div>
       )
     }
 
+    if (fileExtension === 'docx') {
+      if (docxHtml) {
+        return (
+          <div className="border rounded-lg bg-white max-h-[500px] overflow-auto shadow-sm">
+            <style>{docxPreviewStyles}</style>
+            <div className="docx-preview px-6 py-4" dangerouslySetInnerHTML={{ __html: docxHtml }} />
+          </div>
+        )
+      }
+
+      return (
+        <div className="flex flex-col items-center justify-center h-64 text-muted-foreground space-y-3">
+          <FileText className="h-10 w-10" />
+          <span>{docxConversionError || 'Preparing Word document preview...'}</span>
+          {docxConversionError && (
+            <Button variant="outline" size="sm" onClick={handleDownload}>
+              <Download className="h-4 w-4 mr-2" />
+              Download file
+            </Button>
+          )}
+        </div>
+      )
+    }
+
     // Image files
-    if (['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp'].includes(extension)) {
+    if (['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp'].includes(fileExtension)) {
       return (
         <div className="flex justify-center">
-          <img 
-            src={documentUrl} 
+          <img
+            src={documentUrl}
             alt={filename}
             className="max-h-96 object-contain border rounded-lg shadow-sm"
           />
@@ -166,11 +220,11 @@ export function DocumentViewer({
     }
 
     // Text files
-    if (['txt', 'md', 'json', 'xml', 'csv'].includes(extension) || mimeType?.includes('text')) {
+    if (['txt', 'md', 'json', 'xml', 'csv'].includes(fileExtension) || mimeType?.includes('text')) {
       return (
         <div className="border rounded-lg p-4 bg-gray-50 max-h-96 overflow-auto">
-          <iframe 
-            src={documentUrl} 
+          <iframe
+            src={documentUrl}
             className="w-full h-80 border-0"
             title={filename}
           />
@@ -179,15 +233,15 @@ export function DocumentViewer({
     }
 
     // Office documents (Word, Excel, PowerPoint)
-    if (['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx'].includes(extension)) {
+    if (['doc', 'xls', 'xlsx', 'ppt', 'pptx'].includes(fileExtension)) {
       // Try to use Office Online viewer
       const officeUrl = `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(documentUrl)}`
-      
+
       return (
         <div className="space-y-4">
           <div className="border rounded-lg overflow-hidden">
-            <iframe 
-              src={officeUrl} 
+            <iframe
+              src={officeUrl}
               className="w-full h-96"
               title={filename}
               onError={() => {
@@ -204,7 +258,7 @@ export function DocumentViewer({
     }
 
     // HTML files
-    if (extension === 'html' || extension === 'htm') {
+    if (fileExtension === 'html' || fileExtension === 'htm') {
       return (
         <div className="border rounded-lg overflow-hidden">
           <iframe 
@@ -225,7 +279,7 @@ export function DocumentViewer({
           <div>
             <p className="text-lg font-medium">Preview not available</p>
             <p className="text-sm">File: {filename}</p>
-            <p className="text-sm">Type: {extension.toUpperCase()} ({mimeType || 'Unknown'})</p>
+            <p className="text-sm">Type: {fileExtension.toUpperCase()} ({mimeType || 'Unknown'})</p>
           </div>
           <p className="text-sm">
             This file type cannot be previewed in the browser. Please download to view.
