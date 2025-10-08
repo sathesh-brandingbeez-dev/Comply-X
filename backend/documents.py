@@ -1,8 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException, status, File, UploadFile, Form, Request
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse, JSONResponse
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import and_, or_, desc, asc, func
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 import base64
 import os
 import tempfile
@@ -12,12 +12,16 @@ import json
 import mimetypes
 from datetime import datetime, timedelta
 import uuid
+import urllib.error
+import urllib.request
+
+from jose import jwt, JWTError
 from PyPDF2 import PdfReader
 from docx import Document as DocxDocument
 from fpdf import FPDF
 
 from database import get_db
-from auth import get_current_user, require_role
+from auth import get_current_user, require_role, create_access_token, SECRET_KEY, ALGORITHM
 from models import (
     User, UserRole, Document, DocumentVersion, DocumentAccess,
     DocumentAuditLog, DocumentCategory, DocumentReview, DocumentStatus,
@@ -30,7 +34,7 @@ from schemas import (
     DocumentAccessRequest, DocumentAccessResponse, DocumentAuditLogResponse,
     DocumentCategoryCreate, DocumentCategoryResponse, DocumentReviewCreate,
     DocumentReviewUpdate, DocumentReviewResponse, DocumentUploadResponse,
-    DocumentStats
+    DocumentStats, DocumentOnlyOfficeSessionResponse
 )
 from font_assets import DEJAVU_SANS_TTF_BASE64
 
@@ -54,6 +58,15 @@ TEMP_DEFAULT_FONT_PATH: Optional[str] = None
 DEFAULT_PDF_FONT_BYTES: Optional[bytes] = None
 EDITABLE_EXTENSIONS = {'.pdf', '.txt', '.md', '.json', '.csv', '.docx'}
 TEXT_EXTENSIONS = {'.txt', '.md', '.json', '.csv'}
+ONLYOFFICE_DOCUMENT_SERVER_URL = os.getenv("ONLYOFFICE_DOCUMENT_SERVER_URL", "").rstrip("/")
+ONLYOFFICE_SHARE_TOKEN_EXPIRE_MINUTES = int(os.getenv("ONLYOFFICE_SHARE_TOKEN_EXPIRE_MINUTES", "30"))
+ONLYOFFICE_JWT_SECRET = os.getenv("ONLYOFFICE_JWT_SECRET")
+ONLYOFFICE_JWT_ALGORITHM = os.getenv("ONLYOFFICE_JWT_ALGORITHM", "HS256")
+ONLYOFFICE_SUPPORTED_EXTENSIONS = {
+    'pdf', 'doc', 'docx', 'docm', 'dot', 'dotx', 'odt', 'rtf', 'txt',
+    'ppt', 'pptx', 'pps', 'ppsx', 'odp',
+    'xls', 'xlsx', 'xlsm', 'csv', 'ods'
+}
 
 # Ensure upload directory exists
 os.makedirs(UPLOAD_DIR, exist_ok=True)
@@ -196,6 +209,24 @@ def calculate_file_hash(file_path: str) -> str:
 def is_editable_document(document: Document) -> bool:
     extension = os.path.splitext(document.filename)[1].lower()
     return extension in EDITABLE_EXTENSIONS
+
+
+def is_onlyoffice_supported(document: Document) -> bool:
+    extension = os.path.splitext(document.filename)[1].lower().lstrip('.')
+    return extension in ONLYOFFICE_SUPPORTED_EXTENSIONS
+
+
+def get_onlyoffice_document_type(extension: str) -> str:
+    normalized = extension.lower().lstrip('.')
+    if normalized in {'xls', 'xlsx', 'xlsm', 'csv', 'ods'}:
+        return 'cell'
+    if normalized in {'ppt', 'pptx', 'pps', 'ppsx', 'odp'}:
+        return 'slide'
+    return 'word'
+
+
+def build_onlyoffice_key(document: Document) -> str:
+    return f"{document.id}-{document.version}-{document.file_hash}"
 
 
 def extract_document_content(document: Document) -> str:
@@ -630,6 +661,12 @@ async def get_document_content(
     supports_editing = is_editable_type
     message = None
     content = ""
+    use_onlyoffice = bool(ONLYOFFICE_DOCUMENT_SERVER_URL and is_onlyoffice_supported(document))
+
+    if use_onlyoffice:
+        supports_editing = False
+        if not message:
+            message = "This document opens in the OnlyOffice editor for visual editing."
 
     if supports_editing:
         try:
@@ -642,14 +679,15 @@ async def get_document_content(
     else:
         if not can_edit:
             message = "You do not have permission to edit this document."
-        elif not is_editable_type:
+        elif not is_editable_type and not use_onlyoffice:
             message = "Editing is not supported for this file type."
 
-        try:
-            # Still attempt to surface readable content when possible
-            content = extract_document_content(document)
-        except Exception:
-            content = ""
+        if not use_onlyoffice:
+            try:
+                # Still attempt to surface readable content when possible
+                content = extract_document_content(document)
+            except Exception:
+                content = ""
 
     return DocumentContentResponse(
         document_id=document.id,
@@ -771,6 +809,272 @@ async def update_document_content(
     )
 
 
+@router.post("/{document_id}/onlyoffice/session",
+           response_model=DocumentOnlyOfficeSessionResponse,
+           summary="Create OnlyOffice editing session",
+           description="Generate OnlyOffice configuration for high-fidelity document editing")
+async def create_onlyoffice_session(
+    document_id: int,
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    if not ONLYOFFICE_DOCUMENT_SERVER_URL:
+        raise HTTPException(status_code=503, detail="OnlyOffice Document Server is not configured")
+
+    document = db.query(Document).filter(Document.id == document_id).first()
+
+    if not document:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    if not check_document_access(db, document, current_user, "read"):
+        raise HTTPException(status_code=403, detail="Insufficient permissions to view this document")
+
+    can_edit = check_document_access(db, document, current_user, "edit")
+
+    if not is_onlyoffice_supported(document):
+        raise HTTPException(status_code=400, detail="This document type is not supported by the OnlyOffice editor")
+
+    session_id = str(uuid.uuid4())
+    expires_at = datetime.utcnow() + timedelta(minutes=ONLYOFFICE_SHARE_TOKEN_EXPIRE_MINUTES)
+    share_token = create_access_token(
+        {
+            "sub": f"document:{document.id}",
+            "scope": "document:onlyoffice",
+            "document_id": document.id,
+            "session_id": session_id,
+        },
+        expires_delta=timedelta(minutes=ONLYOFFICE_SHARE_TOKEN_EXPIRE_MINUTES)
+    )
+
+    download_url = request.url_for("download_document_shared", token=share_token)
+    callback_url = request.url_for("onlyoffice_callback", document_id=document.id, session_id=session_id)
+    file_extension = os.path.splitext(document.filename)[1].lower().lstrip('.')
+
+    config: Dict[str, Any] = {
+        "documentType": get_onlyoffice_document_type(file_extension),
+        "document": {
+            "fileType": file_extension,
+            "title": document.filename,
+            "key": build_onlyoffice_key(document),
+            "url": str(download_url),
+            "permissions": {
+                "comment": can_edit,
+                "download": True,
+                "edit": can_edit,
+                "fillForms": True,
+                "modifyFilter": can_edit,
+                "print": True,
+                "review": can_edit,
+            },
+        },
+        "editorConfig": {
+            "callbackUrl": str(callback_url),
+            "mode": "edit" if can_edit else "view",
+            "lang": "en",
+            "user": {
+                "id": str(current_user.id),
+                "name": f"{current_user.first_name} {current_user.last_name}".strip() or current_user.email,
+            },
+            "customization": {
+                "autosave": True,
+                "forcesave": True,
+            },
+        },
+        "height": "100%",
+        "width": "100%",
+    }
+
+    onlyoffice_token = None
+    if ONLYOFFICE_JWT_SECRET:
+        try:
+            onlyoffice_token = jwt.encode(config, ONLYOFFICE_JWT_SECRET, algorithm=ONLYOFFICE_JWT_ALGORITHM)
+        except Exception:
+            onlyoffice_token = None
+
+    log_document_action(
+        db,
+        document.id,
+        current_user,
+        "ONLYOFFICE_SESSION",
+        {"session_id": session_id, "can_edit": can_edit},
+        request,
+    )
+
+    return DocumentOnlyOfficeSessionResponse(
+        document_id=document.id,
+        session_id=session_id,
+        can_edit=can_edit,
+        expires_at=expires_at,
+        document_server_url=ONLYOFFICE_DOCUMENT_SERVER_URL,
+        config=config,
+        token=onlyoffice_token,
+    )
+
+
+@router.get("/shared/{token}",
+           name="download_document_shared",
+           summary="Download document via share token",
+           description="Serve document file for OnlyOffice editor access")
+async def download_document_shared(
+    token: str,
+    db: Session = Depends(get_db)
+):
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+    except JWTError:
+        raise HTTPException(status_code=403, detail="Invalid or expired download token")
+
+    if payload.get("scope") != "document:onlyoffice":
+        raise HTTPException(status_code=403, detail="Invalid token scope")
+
+    document_id = payload.get("document_id")
+    if not document_id:
+        raise HTTPException(status_code=400, detail="Invalid token payload")
+
+    document = db.query(Document).filter(Document.id == document_id).first()
+
+    if not document:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    if not os.path.exists(document.file_path):
+        raise HTTPException(status_code=404, detail="File not found on server")
+
+    return FileResponse(
+        path=document.file_path,
+        filename=document.filename,
+        media_type=document.mime_type
+    )
+
+
+@router.post("/{document_id}/onlyoffice/callback/{session_id}",
+           name="onlyoffice_callback",
+           summary="OnlyOffice save callback")
+async def handle_onlyoffice_callback(
+    document_id: int,
+    session_id: str,
+    request: Request,
+    db: Session = Depends(get_db)
+):
+    document = db.query(Document).filter(Document.id == document_id).first()
+
+    if not document:
+        return JSONResponse({"error": 1, "message": "Document not found"})
+
+    try:
+        payload = await request.json()
+    except Exception:
+        return JSONResponse({"error": 1, "message": "Invalid callback payload"})
+
+    status_value = payload.get("status")
+
+    if status_value not in {2, 6}:
+        # For other statuses we simply acknowledge the callback
+        return JSONResponse({"error": 0})
+
+    download_url = payload.get("url")
+
+    if not download_url:
+        return JSONResponse({"error": 1, "message": "Missing document download URL"})
+
+    temp_file_path: Optional[str] = None
+    try:
+        suffix = os.path.splitext(document.filename)[1] or ""
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as temp_file:
+            temp_file_path = temp_file.name
+
+        with urllib.request.urlopen(download_url) as response, open(temp_file_path, "wb") as outfile:
+            shutil.copyfileobj(response, outfile)
+    except (urllib.error.URLError, OSError) as exc:
+        if temp_file_path and os.path.exists(temp_file_path):
+            try:
+                os.remove(temp_file_path)
+            except OSError:
+                pass
+        return JSONResponse({"error": 1, "message": f"Failed to download updated document: {exc}"})
+
+    editor_user_id: Optional[int] = None
+    for candidate in payload.get("users", []) or []:
+        try:
+            editor_user_id = int(candidate)
+            break
+        except (TypeError, ValueError):
+            continue
+
+    old_file_path = document.file_path
+    new_file_path = os.path.join(UPLOAD_DIR, f"{uuid.uuid4()}_{document.filename}")
+
+    try:
+        version_filename = f"{document.version.replace('.', '_')}_{datetime.utcnow().strftime('%Y%m%d%H%M%S')}_{document.filename}"
+        version_path = os.path.join(VERSION_DIR, version_filename)
+        shutil.copy2(document.file_path, version_path)
+
+        change_summary = payload.get("message") if isinstance(payload.get("message"), str) else None
+
+        version_record = DocumentVersion(
+            document_id=document.id,
+            version=document.version,
+            filename=document.filename,
+            file_path=version_path,
+            file_size=document.file_size,
+            file_hash=document.file_hash,
+            change_summary=change_summary,
+            created_by_id=editor_user_id or document.modified_by_id or document.created_by_id,
+        )
+        db.add(version_record)
+
+        shutil.move(temp_file_path, new_file_path)
+        temp_file_path = None
+
+        document.file_path = new_file_path
+        document.file_size = os.path.getsize(new_file_path)
+        document.file_hash = calculate_file_hash(new_file_path)
+        document.version = increment_document_version(document.version)
+        document.updated_at = datetime.utcnow()
+        document.mime_type = mimetypes.guess_type(document.filename)[0] or document.mime_type
+
+        if editor_user_id:
+            document.modified_by_id = editor_user_id
+
+        db.commit()
+
+        if old_file_path and os.path.exists(old_file_path):
+            try:
+                os.remove(old_file_path)
+            except OSError:
+                pass
+
+        actor: Optional[User] = None
+        if editor_user_id:
+            actor = db.query(User).filter(User.id == editor_user_id).first()
+        if not actor and document.modified_by_id:
+            actor = db.query(User).filter(User.id == document.modified_by_id).first()
+        if not actor:
+            actor = db.query(User).filter(User.id == document.created_by_id).first()
+
+        if actor:
+            log_document_action(
+                db,
+                document.id,
+                actor,
+                "ONLYOFFICE_SAVE",
+                {"session_id": session_id, "version": document.version},
+            )
+
+        return JSONResponse({"error": 0})
+    except Exception as exc:
+        db.rollback()
+        if temp_file_path and os.path.exists(temp_file_path):
+            try:
+                os.remove(temp_file_path)
+            except OSError:
+                pass
+        if new_file_path and os.path.exists(new_file_path):
+            try:
+                os.remove(new_file_path)
+            except OSError:
+                pass
+        return JSONResponse({"error": 1, "message": f"Failed to persist OnlyOffice changes: {exc}"})
 @router.get("/{document_id}/versions",
            response_model=List[DocumentVersionResponse],
            summary="List document versions",

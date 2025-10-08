@@ -51,6 +51,7 @@ import {
   AlignJustify
 } from 'lucide-react'
 import { DocumentViewer } from './document-viewer'
+import { OnlyOfficeEditorFrame } from './onlyoffice-editor-frame'
 import { buildApiUrl } from '@/lib/api'
 import { cn } from '@/lib/utils'
 
@@ -81,6 +82,16 @@ interface DocumentVersionInfo {
   change_summary?: string | null
   created_by_id: number
   created_at: string
+}
+
+interface OnlyOfficeSession {
+  document_id: number
+  session_id: string
+  can_edit: boolean
+  expires_at: string
+  document_server_url: string
+  config: Record<string, any>
+  token?: string | null
 }
 
 interface DocumentEditorProps {
@@ -299,7 +310,19 @@ export function DocumentEditor({
     () => document?.filename?.split('.').pop()?.toLowerCase() ?? '',
     [document?.filename]
   )
+  const [onlyOfficeSession, setOnlyOfficeSession] = useState<OnlyOfficeSession | null>(null)
+  const [onlyOfficeLoading, setOnlyOfficeLoading] = useState(false)
+  const [onlyOfficeError, setOnlyOfficeError] = useState<string | null>(null)
+  const [onlyOfficeUnsavedChanges, setOnlyOfficeUnsavedChanges] = useState(false)
   const [contentTab, setContentTab] = useState<'preview' | 'edit'>('preview')
+  const supportsOnlyOfficeEditing = useMemo(() => {
+    if (!fileExtension) return false
+    return [
+      'pdf', 'doc', 'docx', 'docm', 'dot', 'dotx', 'odt', 'rtf', 'txt',
+      'ppt', 'pptx', 'pps', 'ppsx', 'odp',
+      'xls', 'xlsx', 'xlsm', 'csv', 'ods'
+    ].includes(fileExtension)
+  }, [fileExtension])
   const [versions, setVersions] = useState<DocumentVersionInfo[]>([])
   const [versionsLoading, setVersionsLoading] = useState(false)
   const [versionsError, setVersionsError] = useState<string | null>(null)
@@ -365,7 +388,9 @@ export function DocumentEditor({
   }, [isOpen, document])
 
   useEffect(() => {
-    if (!isEditing) {
+    if (isEditing) {
+      setContentTab('edit')
+    } else {
       setContentTab('preview')
     }
   }, [isEditing])
@@ -417,9 +442,14 @@ export function DocumentEditor({
       }
 
       const data = await response.json()
-      setContent(data.content || '')
-      setInitialContent(data.content || '')
-      setSupportsContentEditing(Boolean(data.supports_editing))
+      if (supportsOnlyOfficeEditing) {
+        setContent('')
+        setInitialContent('')
+      } else {
+        setContent(data.content || '')
+        setInitialContent(data.content || '')
+      }
+      setSupportsContentEditing(!supportsOnlyOfficeEditing && Boolean(data.supports_editing))
       setCanEditContent(Boolean(data.can_edit))
       setContentMessage(data.message || null)
     } catch (err: any) {
@@ -427,7 +457,7 @@ export function DocumentEditor({
     } finally {
       setContentLoading(false)
     }
-  }, [document])
+  }, [document, supportsOnlyOfficeEditing])
 
   const fetchDocumentVersions = useCallback(async () => {
     const token = getAuthToken()
@@ -461,12 +491,91 @@ export function DocumentEditor({
     }
   }, [document])
 
+  const fetchOnlyOfficeSession = useCallback(
+    async (forceRefresh = false) => {
+      if (!document || !supportsOnlyOfficeEditing) return
+
+      if (!forceRefresh && onlyOfficeSession?.expires_at) {
+        const expiresAt = new Date(onlyOfficeSession.expires_at).getTime()
+        if (!Number.isNaN(expiresAt) && expiresAt - Date.now() > 60_000) {
+          return
+        }
+      }
+
+      const token = getAuthToken()
+      if (!token) {
+        setOnlyOfficeError('No authentication token found')
+        return
+      }
+
+      setOnlyOfficeLoading(true)
+      setOnlyOfficeError(null)
+
+      try {
+        const response = await fetch(buildApiUrl(`/documents/${document.id}/onlyoffice/session`), {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          }
+        })
+
+        if (!response.ok) {
+          const errorBody = await response.json().catch(() => ({}))
+          throw new Error(errorBody.detail || errorBody.message || 'Failed to prepare OnlyOffice session')
+        }
+
+        const data = await response.json()
+        setOnlyOfficeSession(data)
+        setOnlyOfficeUnsavedChanges(false)
+      } catch (error: any) {
+        console.error('OnlyOffice session error:', error)
+        setOnlyOfficeSession(null)
+        setOnlyOfficeError(error?.message || 'Failed to prepare OnlyOffice session')
+      } finally {
+        setOnlyOfficeLoading(false)
+      }
+    },
+    [document, supportsOnlyOfficeEditing, onlyOfficeSession]
+  )
+
   useEffect(() => {
     if (isOpen && document) {
       fetchDocumentContent()
       fetchDocumentVersions()
     }
   }, [isOpen, document?.id, fetchDocumentContent, fetchDocumentVersions])
+
+  useEffect(() => {
+    if (!supportsOnlyOfficeEditing) return
+    if (!isEditing || contentTab !== 'edit') return
+    fetchOnlyOfficeSession()
+  }, [supportsOnlyOfficeEditing, isEditing, contentTab, fetchOnlyOfficeSession])
+
+  useEffect(() => {
+    if (!isOpen) {
+      setOnlyOfficeSession(null)
+      setOnlyOfficeError(null)
+      setOnlyOfficeUnsavedChanges(false)
+    }
+  }, [isOpen])
+
+  useEffect(() => {
+    if (!isEditing) {
+      setOnlyOfficeUnsavedChanges(false)
+      if (onlyOfficeSession) {
+        setOnlyOfficeSession(null)
+      }
+    }
+  }, [isEditing, onlyOfficeSession])
+
+  useEffect(() => {
+    if (!isEditing && supportsOnlyOfficeEditing) {
+      setViewerRefreshKey(prev => prev + 1)
+      fetchDocumentVersions()
+      onRefresh?.()
+    }
+  }, [isEditing, supportsOnlyOfficeEditing, fetchDocumentVersions, onRefresh])
 
   const handleContentSave = async () => {
     if (!document) return
@@ -549,7 +658,7 @@ export function DocumentEditor({
   }
 
   const isContentDirty = supportsContentEditing && canEditContent && content !== initialContent
-  const editTabDisabled = !supportsContentEditing
+  const editTabDisabled = !supportsContentEditing && !supportsOnlyOfficeEditing
   const formatVersionDate = (value: string) => new Date(value).toLocaleString()
   const [latestVersion, ...previousVersions] = versions
 
@@ -762,6 +871,14 @@ export function DocumentEditor({
   const blockerItems = workflowProgress.blockers ?? []
   const phaseEstimates = workflowTimeline.phase_estimates ?? []
   const timelineNotes = workflowTimeline.notes ?? []
+  const onlyOfficeConfig = useMemo(() => {
+    if (!onlyOfficeSession) return null
+    const cloned = JSON.parse(JSON.stringify(onlyOfficeSession.config ?? {}))
+    cloned.editorConfig = cloned.editorConfig ?? {}
+    cloned.editorConfig.mode = isEditing && onlyOfficeSession.can_edit ? 'edit' : 'view'
+    cloned.events = cloned.events ?? {}
+    return cloned
+  }, [onlyOfficeSession, isEditing])
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
@@ -1079,7 +1196,99 @@ export function DocumentEditor({
                     )}
                   </TabsContent>
                   <TabsContent value="edit" className="space-y-4">
-                    {contentLoading ? (
+                    {supportsOnlyOfficeEditing ? (
+                      <div className="space-y-4">
+                        {contentMessage && (
+                          <Alert>
+                            <AlertTitle>Document ready</AlertTitle>
+                            <AlertDescription>{contentMessage}</AlertDescription>
+                          </Alert>
+                        )}
+                        {!isEditing && (
+                          <Alert>
+                            <AlertTitle>Enable editing</AlertTitle>
+                            <AlertDescription>
+                              Use the Edit toggle above to launch the visual OnlyOffice editor.
+                            </AlertDescription>
+                          </Alert>
+                        )}
+                        {onlyOfficeError && (
+                          <Alert variant="destructive">
+                            <AlertTitle>Unable to launch editor</AlertTitle>
+                            <AlertDescription>
+                              <div className="space-y-2">
+                                <p>{onlyOfficeError}</p>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => fetchOnlyOfficeSession(true)}
+                                  disabled={onlyOfficeLoading}
+                                >
+                                  Retry session
+                                </Button>
+                              </div>
+                            </AlertDescription>
+                          </Alert>
+                        )}
+                        {contentError && !onlyOfficeError && (
+                          <Alert variant="destructive">
+                            <AlertTitle>Content warning</AlertTitle>
+                            <AlertDescription>{contentError}</AlertDescription>
+                          </Alert>
+                        )}
+                        {isEditing && !onlyOfficeError && (
+                          <div className="space-y-3">
+                            {onlyOfficeLoading && (
+                              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                                Preparing OnlyOffice editor...
+                              </div>
+                            )}
+                            {!onlyOfficeLoading && onlyOfficeSession && onlyOfficeConfig && (
+                              <div className="space-y-3">
+                                {onlyOfficeUnsavedChanges && (
+                                  <Alert>
+                                    <AlertTitle>Saving changes</AlertTitle>
+                                    <AlertDescription>
+                                      Your updates are being synced. The preview will refresh once you exit edit mode.
+                                    </AlertDescription>
+                                  </Alert>
+                                )}
+                                <OnlyOfficeEditorFrame
+                                  documentServerUrl={onlyOfficeSession.document_server_url}
+                                  config={onlyOfficeConfig}
+                                  token={onlyOfficeSession.token ?? undefined}
+                                  onError={(message) => setOnlyOfficeError(message)}
+                                  onDocumentStateChange={(isChanged) => setOnlyOfficeUnsavedChanges(isChanged)}
+                                  refreshKey={onlyOfficeSession.session_id}
+                                  className="bg-white"
+                                  height="620px"
+                                />
+                                <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+                                  <span>
+                                    Session expires at{' '}
+                                    {new Date(onlyOfficeSession.expires_at).toLocaleString()}
+                                  </span>
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => fetchOnlyOfficeSession(true)}
+                                    disabled={onlyOfficeLoading}
+                                  >
+                                    Refresh session
+                                  </Button>
+                                  {!onlyOfficeSession.can_edit && (
+                                    <span className="text-destructive">
+                                      Editing is disabled for your account. You can review the document in read-only mode.
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    ) : contentLoading ? (
                       <div className="flex items-center gap-2 text-sm text-muted-foreground">
                         <Loader2 className="h-4 w-4 animate-spin" />
                         Loading editable content...
