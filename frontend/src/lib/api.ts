@@ -228,7 +228,7 @@ function joinUrl(base: string, tail: string): string {
   return `${base}${sep}${t}`;
 }
 
-function getAuthToken(): string | null {
+export function getStoredAuthToken(): string | null {
   if (typeof window === "undefined") return null;
   try {
     return (
@@ -300,7 +300,7 @@ export async function api<T>(path: string, init: FetchOptions = {}): Promise<T> 
   if (hasBody && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
   if (!headers.has("Accept")) headers.set("Accept", "application/json");
 
-  const token = getAuthToken();
+  const token = getStoredAuthToken();
   if (token && !headers.has("Authorization")) headers.set("Authorization", `Bearer ${token}`);
 
   const url = buildUrl(path);

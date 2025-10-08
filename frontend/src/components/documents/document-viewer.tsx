@@ -12,7 +12,7 @@ import {
   ExternalLink
 } from 'lucide-react'
 
-import { buildApiUrl } from '@/lib/api'
+import { buildApiUrl, getStoredAuthToken } from '@/lib/api'
 
 interface DocumentViewerProps {
   documentId: number
@@ -78,7 +78,7 @@ export function DocumentViewer({
     setIsDocxConverting(fileExtension === 'docx')
 
     try {
-      const token = localStorage.getItem('auth_token')
+      const token = getStoredAuthToken()
       if (!token) {
         setError('No authentication token found')
         return
@@ -126,7 +126,7 @@ export function DocumentViewer({
 
   const handleDownload = async () => {
     try {
-      const token = localStorage.getItem('auth_token')
+      const token = getStoredAuthToken()
       if (!token) return
 
       const downloadUrl = buildApiUrl(`/documents/${documentId}/download`)
