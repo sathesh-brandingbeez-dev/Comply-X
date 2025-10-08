@@ -314,16 +314,9 @@ export function DocumentEditor({
   const [onlyOfficeLoading, setOnlyOfficeLoading] = useState(false)
   const [onlyOfficeError, setOnlyOfficeError] = useState<string | null>(null)
   const [onlyOfficeUnsavedChanges, setOnlyOfficeUnsavedChanges] = useState(false)
+  const [supportsOnlyOfficeEditing, setSupportsOnlyOfficeEditing] = useState(false)
   const wasEditingRef = useRef(isEditing)
   const [contentTab, setContentTab] = useState<'preview' | 'edit'>('preview')
-  const supportsOnlyOfficeEditing = useMemo(() => {
-    if (!fileExtension) return false
-    return [
-      'pdf', 'doc', 'docx', 'docm', 'dot', 'dotx', 'odt', 'rtf', 'txt',
-      'ppt', 'pptx', 'pps', 'ppsx', 'odp',
-      'xls', 'xlsx', 'xlsm', 'csv', 'ods'
-    ].includes(fileExtension)
-  }, [fileExtension])
   const [versions, setVersions] = useState<DocumentVersionInfo[]>([])
   const [versionsLoading, setVersionsLoading] = useState(false)
   const [versionsError, setVersionsError] = useState<string | null>(null)
@@ -443,14 +436,16 @@ export function DocumentEditor({
       }
 
       const data = await response.json()
-      if (supportsOnlyOfficeEditing) {
+      setSupportsOnlyOfficeEditing(Boolean(data.supports_onlyoffice))
+
+      if (data.supports_onlyoffice) {
         setContent('')
         setInitialContent('')
       } else {
         setContent(data.content || '')
         setInitialContent(data.content || '')
       }
-      setSupportsContentEditing(!supportsOnlyOfficeEditing && Boolean(data.supports_editing))
+      setSupportsContentEditing(!data.supports_onlyoffice && Boolean(data.supports_editing))
       setCanEditContent(Boolean(data.can_edit))
       setContentMessage(data.message || null)
     } catch (err: any) {
@@ -458,7 +453,7 @@ export function DocumentEditor({
     } finally {
       setContentLoading(false)
     }
-  }, [document, supportsOnlyOfficeEditing])
+  }, [document])
 
   const fetchDocumentVersions = useCallback(async () => {
     const token = getAuthToken()
@@ -539,6 +534,10 @@ export function DocumentEditor({
     },
     [document, supportsOnlyOfficeEditing, onlyOfficeSession]
   )
+
+  useEffect(() => {
+    setSupportsOnlyOfficeEditing(false)
+  }, [document?.id])
 
   useEffect(() => {
     if (isOpen && document) {
