@@ -345,6 +345,16 @@ class DocumentContentUpdate(BaseModel):
     content: str
     change_summary: Optional[str] = None
 
+
+class DocumentOnlyOfficeSessionResponse(BaseModel):
+    document_id: int
+    session_id: str
+    can_edit: bool
+    expires_at: datetime
+    document_server_url: str
+    config: Dict[str, Any]
+    token: Optional[str] = None
+
 class DocumentAccessRequest(BaseModel):
     user_id: Optional[int] = None
     role: Optional[UserRole] = None
