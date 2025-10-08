@@ -506,6 +506,7 @@ export function DocumentsList({
           onClose={() => setEditingDocument(null)}
           onSave={handleSaveEdit}
           onDownload={() => handleDownload(editingDocument)}
+          onRefresh={onRefresh}
         />
       )}
     </div>

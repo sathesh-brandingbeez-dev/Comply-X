@@ -10,6 +10,9 @@ import json
 import mimetypes
 from datetime import datetime, timedelta
 import uuid
+from PyPDF2 import PdfReader
+from docx import Document as DocxDocument
+from fpdf import FPDF
 
 from database import get_db
 from auth import get_current_user, require_role
@@ -21,6 +24,7 @@ from models import (
 from schemas import (
     DocumentCreate, DocumentUpdate, DocumentResponse, DocumentListResponse,
     DocumentSearchRequest, DocumentSearchResponse, DocumentVersionResponse,
+    DocumentContentResponse, DocumentContentUpdate,
     DocumentAccessRequest, DocumentAccessResponse, DocumentAuditLogResponse,
     DocumentCategoryCreate, DocumentCategoryResponse, DocumentReviewCreate,
     DocumentReviewUpdate, DocumentReviewResponse, DocumentUploadResponse,
@@ -38,8 +42,13 @@ ALLOWED_EXTENSIONS = {
     '.zip', '.rar', '.7z', '.mp4', '.avi', '.mov'
 }
 
+VERSION_DIR = os.path.join(UPLOAD_DIR, "versions")
+EDITABLE_EXTENSIONS = {'.pdf', '.txt', '.md', '.json', '.csv', '.docx'}
+TEXT_EXTENSIONS = {'.txt', '.md', '.json', '.csv'}
+
 # Ensure upload directory exists
 os.makedirs(UPLOAD_DIR, exist_ok=True)
+os.makedirs(VERSION_DIR, exist_ok=True)
 
 def log_document_action(db: Session, document_id: int, user: User, action: str, 
                        details: dict = None, request: Request = None):
@@ -132,6 +141,98 @@ def calculate_file_hash(file_path: str) -> str:
         for chunk in iter(lambda: f.read(4096), b""):
             hash_sha256.update(chunk)
     return hash_sha256.hexdigest()
+
+
+def is_editable_document(document: Document) -> bool:
+    extension = os.path.splitext(document.filename)[1].lower()
+    return extension in EDITABLE_EXTENSIONS
+
+
+def extract_document_content(document: Document) -> str:
+    if not os.path.exists(document.file_path):
+        raise FileNotFoundError("Document file not found on server")
+
+    extension = os.path.splitext(document.filename)[1].lower()
+
+    if extension == '.pdf':
+        reader = PdfReader(document.file_path)
+        text_chunks = []
+        for page in reader.pages:
+            extracted = page.extract_text() or ""
+            if extracted:
+                text_chunks.append(extracted.strip())
+        return "\n\n".join(text_chunks)
+
+    if extension in TEXT_EXTENSIONS:
+        with open(document.file_path, 'r', encoding='utf-8', errors='ignore') as file:
+            return file.read()
+
+    if extension == '.docx':
+        doc = DocxDocument(document.file_path)
+        paragraphs = [paragraph.text for paragraph in doc.paragraphs]
+        return "\n".join(paragraphs)
+
+    raise ValueError("Editing is not supported for this file type")
+
+
+def create_updated_document_file(document: Document, content: str) -> str:
+    extension = os.path.splitext(document.filename)[1].lower()
+    original_name = os.path.splitext(os.path.basename(document.filename))[0]
+    unique_filename = f"{uuid.uuid4()}_{original_name}{extension}"
+    new_file_path = os.path.join(UPLOAD_DIR, unique_filename)
+
+    normalized_content = content or ""
+
+    if extension == '.pdf':
+        pdf = FPDF()
+        pdf.set_auto_page_break(auto=True, margin=15)
+        pdf.add_page()
+        pdf.set_font("Helvetica", size=12)
+
+        lines = normalized_content.splitlines() or [""]
+        for line in lines:
+            if line.strip() == "":
+                pdf.ln(8)
+            else:
+                pdf.multi_cell(0, 8, line)
+
+        pdf.output(new_file_path)
+        return new_file_path
+
+    if extension in TEXT_EXTENSIONS:
+        with open(new_file_path, 'w', encoding='utf-8') as file:
+            file.write(normalized_content)
+        return new_file_path
+
+    if extension == '.docx':
+        doc = DocxDocument()
+        lines = normalized_content.splitlines()
+
+        if not lines:
+            doc.add_paragraph("")
+        else:
+            for line in lines:
+                doc.add_paragraph(line)
+
+        doc.save(new_file_path)
+        return new_file_path
+
+    raise ValueError("Editing is not supported for this file type")
+
+
+def increment_document_version(version: str) -> str:
+    try:
+        major_str, minor_str = version.split('.')
+        major = int(major_str)
+        minor = int(minor_str)
+        minor += 1
+        return f"{major}.{minor}"
+    except Exception:
+        try:
+            numeric_version = float(version)
+            return f"{numeric_version + 0.1:.1f}"
+        except Exception:
+            return "1.0"
 
 @router.post("/upload", 
              response_model=DocumentUploadResponse,
@@ -396,7 +497,7 @@ async def search_documents(
             detail=f"Internal server error during document search: {str(e)}"
         )
 
-@router.get("/{document_id}", 
+@router.get("/{document_id}",
            response_model=DocumentResponse,
            summary="Get Document",
            description="Get document details by ID")
@@ -439,8 +540,231 @@ async def get_document(
                 'description': q.description
             } for q in linked_questionnaires
         ]
-    
+
     return response_data
+
+
+@router.get("/{document_id}/content",
+           response_model=DocumentContentResponse,
+           summary="Get editable document content",
+           description="Fetch the text content of a document for inline editing")
+async def get_document_content(
+    document_id: int,
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    document = db.query(Document).filter(Document.id == document_id).first()
+
+    if not document:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    if not check_document_access(db, document, current_user, "read"):
+        raise HTTPException(status_code=403, detail="Insufficient permissions to view this document")
+
+    can_edit = check_document_access(db, document, current_user, "edit")
+    is_editable_type = is_editable_document(document)
+    supports_editing = is_editable_type
+    message = None
+    content = ""
+
+    if supports_editing:
+        try:
+            content = extract_document_content(document)
+        except FileNotFoundError:
+            raise HTTPException(status_code=404, detail="Document file not found on server")
+        except Exception as exc:
+            supports_editing = False
+            message = f"Unable to load document content for editing: {str(exc)}"
+    else:
+        if not can_edit:
+            message = "You do not have permission to edit this document."
+        elif not is_editable_type:
+            message = "Editing is not supported for this file type."
+
+        try:
+            # Still attempt to surface readable content when possible
+            content = extract_document_content(document)
+        except Exception:
+            content = ""
+
+    return DocumentContentResponse(
+        document_id=document.id,
+        filename=document.filename,
+        mime_type=document.mime_type,
+        version=document.version,
+        content=content,
+        supports_editing=supports_editing,
+        can_edit=can_edit,
+        message=message
+    )
+
+
+@router.put("/{document_id}/content",
+           response_model=DocumentContentResponse,
+           summary="Update document content",
+           description="Update the contents of a document and create a new version")
+async def update_document_content(
+    document_id: int,
+    payload: DocumentContentUpdate,
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    document = db.query(Document).filter(Document.id == document_id).first()
+
+    if not document:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    if current_user.role == UserRole.VIEWER:
+        raise HTTPException(status_code=403, detail="Viewers do not have permission to edit documents.")
+
+    if not check_document_access(db, document, current_user, "edit"):
+        raise HTTPException(status_code=403, detail="Insufficient permissions to edit this document")
+
+    if not is_editable_document(document):
+        raise HTTPException(status_code=400, detail="Editing is not supported for this file type")
+
+    if not os.path.exists(document.file_path):
+        raise HTTPException(status_code=404, detail="Document file not found on server")
+
+    change_summary = payload.change_summary
+
+    new_file_path = None
+    old_file_path = document.file_path
+
+    try:
+        version_filename = f"{document.version.replace('.', '_')}_{datetime.utcnow().strftime('%Y%m%d%H%M%S')}_{document.filename}"
+        version_path = os.path.join(VERSION_DIR, version_filename)
+        shutil.copy2(document.file_path, version_path)
+
+        version_record = DocumentVersion(
+            document_id=document.id,
+            version=document.version,
+            filename=document.filename,
+            file_path=version_path,
+            file_size=document.file_size,
+            file_hash=document.file_hash,
+            change_summary=change_summary,
+            created_by_id=current_user.id
+        )
+        db.add(version_record)
+
+        new_file_path = create_updated_document_file(document, payload.content)
+        new_file_size = os.path.getsize(new_file_path)
+        new_file_hash = calculate_file_hash(new_file_path)
+        new_version = increment_document_version(document.version)
+
+        document.file_path = new_file_path
+        document.file_size = new_file_size
+        document.file_hash = new_file_hash
+        document.modified_by_id = current_user.id
+        document.updated_at = datetime.utcnow()
+        document.version = new_version
+        document.mime_type = mimetypes.guess_type(document.filename)[0] or document.mime_type
+
+        db.commit()
+        db.refresh(document)
+        if old_file_path and os.path.exists(old_file_path):
+            try:
+                os.remove(old_file_path)
+            except OSError:
+                pass
+    except ValueError as exc:
+        db.rollback()
+        if new_file_path and os.path.exists(new_file_path):
+            try:
+                os.remove(new_file_path)
+            except OSError:
+                pass
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        db.rollback()
+        if new_file_path and os.path.exists(new_file_path):
+            try:
+                os.remove(new_file_path)
+            except OSError:
+                pass
+        raise HTTPException(status_code=500, detail=f"Failed to update document content: {str(exc)}")
+
+    log_document_action(
+        db,
+        document.id,
+        current_user,
+        "CONTENT_UPDATE",
+        {"version": document.version, "change_summary": change_summary},
+        request
+    )
+
+    return DocumentContentResponse(
+        document_id=document.id,
+        filename=document.filename,
+        mime_type=document.mime_type,
+        version=document.version,
+        content=payload.content,
+        supports_editing=True,
+        can_edit=True,
+        message="Document content updated successfully"
+    )
+
+
+@router.get("/{document_id}/versions",
+           response_model=List[DocumentVersionResponse],
+           summary="List document versions",
+           description="Retrieve the saved historical versions of a document")
+async def get_document_versions(
+    document_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    document = db.query(Document).filter(Document.id == document_id).first()
+
+    if not document:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    if not check_document_access(db, document, current_user, "read"):
+        raise HTTPException(status_code=403, detail="Insufficient permissions to view this document")
+
+    versions = db.query(DocumentVersion).options(joinedload(DocumentVersion.created_by)).filter(
+        DocumentVersion.document_id == document_id
+    ).order_by(desc(DocumentVersion.created_at)).all()
+
+    return [DocumentVersionResponse.model_validate(version) for version in versions]
+
+
+@router.get("/{document_id}/versions/{version_id}/download",
+           summary="Download document version",
+           description="Download a specific historical version of a document")
+async def download_document_version(
+    document_id: int,
+    version_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    document = db.query(Document).filter(Document.id == document_id).first()
+
+    if not document:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    if not check_document_access(db, document, current_user, "download"):
+        raise HTTPException(status_code=403, detail="Insufficient permissions to download this document")
+
+    version = db.query(DocumentVersion).filter(
+        DocumentVersion.id == version_id,
+        DocumentVersion.document_id == document_id
+    ).first()
+
+    if not version:
+        raise HTTPException(status_code=404, detail="Document version not found")
+
+    if not os.path.exists(version.file_path):
+        raise HTTPException(status_code=404, detail="Version file not found on server")
+
+    return FileResponse(
+        path=version.file_path,
+        filename=version.filename,
+        media_type=document.mime_type
+    )
 
 @router.get("/{document_id}/download",
            summary="Download Document",

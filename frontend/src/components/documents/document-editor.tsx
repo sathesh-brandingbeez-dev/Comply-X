@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -21,6 +21,8 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Card, CardContent } from '@/components/ui/card'
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import {
   Save,
   Download,
@@ -34,7 +36,9 @@ import {
   ListOrdered,
   Copy,
   Users,
-  Clock
+  Clock,
+  History,
+  Undo2
 } from 'lucide-react'
 import { DocumentViewer } from './document-viewer'
 
@@ -56,20 +60,33 @@ interface Document {
   mime_type?: string
 }
 
+interface DocumentVersionInfo {
+  id: number
+  version: string
+  filename: string
+  file_size: number
+  file_hash: string
+  change_summary?: string | null
+  created_by_id: number
+  created_at: string
+}
+
 interface DocumentEditorProps {
   document: Document
   isOpen: boolean
   onClose: () => void
   onSave: (updatedDocument: Partial<Document>) => Promise<void>
   onDownload: () => void
+  onRefresh?: () => void
 }
 
-export function DocumentEditor({ 
-  document, 
-  isOpen, 
-  onClose, 
-  onSave, 
-  onDownload 
+export function DocumentEditor({
+  document,
+  isOpen,
+  onClose,
+  onSave,
+  onDownload,
+  onRefresh
 }: DocumentEditorProps) {
   const [isEditing, setIsEditing] = useState(false)
   const [isSaving, setSaving] = useState(false)
@@ -94,7 +111,21 @@ export function DocumentEditor({
   const [workflowProgress, setWorkflowProgress] = useState<{ next_step?: string; automation?: string[]; blockers?: string[] }>({})
   const [workflowTimeline, setWorkflowTimeline] = useState<{ estimated_completion?: string; phase_estimates?: { phase: string; days?: number }[]; risk_level?: string; confidence?: number; notes?: string[] }>({})
   const [copiedCompletion, setCopiedCompletion] = useState(false)
-  const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL
+  const [content, setContent] = useState('')
+  const [initialContent, setInitialContent] = useState('')
+  const [contentLoading, setContentLoading] = useState(false)
+  const [contentError, setContentError] = useState<string | null>(null)
+  const [contentMessage, setContentMessage] = useState<string | null>(null)
+  const [supportsContentEditing, setSupportsContentEditing] = useState(false)
+  const [canEditContent, setCanEditContent] = useState(false)
+  const [contentSaving, setContentSaving] = useState(false)
+  const [contentChangeSummary, setContentChangeSummary] = useState('')
+  const [viewerRefreshKey, setViewerRefreshKey] = useState(0)
+  const [contentTab, setContentTab] = useState<'preview' | 'edit'>('preview')
+  const [versions, setVersions] = useState<DocumentVersionInfo[]>([])
+  const [versionsLoading, setVersionsLoading] = useState(false)
+  const [versionsError, setVersionsError] = useState<string | null>(null)
+  const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, '')
 
   const documentTypes = [
     { value: 'policy', label: 'Policy' },
@@ -145,20 +176,41 @@ export function DocumentEditor({
       setAiGrammarSummary(null)
       setNumberedSections([])
       setNumberingNotes([])
+      setContent('')
+      setInitialContent('')
+      setContentError(null)
+      setContentMessage(null)
+      setContentChangeSummary('')
+      setContentTab('preview')
+      setViewerRefreshKey(0)
       fetchTemplateSuggestions()
       fetchWorkflowInsights()
     }
   }, [isOpen, document])
+
+  useEffect(() => {
+    if (isOpen && document) {
+      fetchDocumentContent()
+      fetchDocumentVersions()
+    }
+  }, [isOpen, document?.id, fetchDocumentContent, fetchDocumentVersions])
+
+  useEffect(() => {
+    if (!isEditing) {
+      setContentTab('preview')
+    }
+  }, [isEditing])
 
   const handleSave = async () => {
     if (!editedDocument || !document) return
 
     setSaving(true)
     setError(null)
-    
+
     try {
       await onSave(editedDocument)
       setIsEditing(false)
+      onRefresh?.()
     } catch (error) {
       console.error('Error saving document:', error)
       setError('Failed to save document changes')
@@ -175,6 +227,151 @@ export function DocumentEditor({
     if (typeof window === 'undefined') return null
     return localStorage.getItem('auth_token')
   }
+
+  const fetchDocumentContent = useCallback(async () => {
+    const token = getAuthToken()
+    if (!token || !document || !API_BASE_URL) return
+
+    setContentLoading(true)
+    setContentError(null)
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/documents/${document.id}/content`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      })
+
+      if (!response.ok) {
+        const errorBody = await response.json().catch(() => ({}))
+        throw new Error(errorBody.detail || 'Failed to load document content')
+      }
+
+      const data = await response.json()
+      setContent(data.content || '')
+      setInitialContent(data.content || '')
+      setSupportsContentEditing(Boolean(data.supports_editing))
+      setCanEditContent(Boolean(data.can_edit))
+      setContentMessage(data.message || null)
+    } catch (err: any) {
+      setContentError(err.message || 'Failed to load document content')
+    } finally {
+      setContentLoading(false)
+    }
+  }, [API_BASE_URL, document])
+
+  const fetchDocumentVersions = useCallback(async () => {
+    const token = getAuthToken()
+    if (!token || !document || !API_BASE_URL) return
+
+    setVersionsLoading(true)
+    setVersionsError(null)
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/documents/${document.id}/versions`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      })
+
+      if (!response.ok) {
+        const errorBody = await response.json().catch(() => ({}))
+        throw new Error(errorBody.detail || 'Failed to load document versions')
+      }
+
+      const data = await response.json()
+      setVersions(data || [])
+    } catch (err: any) {
+      setVersionsError(err.message || 'Failed to load document versions')
+      setVersions([])
+    } finally {
+      setVersionsLoading(false)
+    }
+  }, [API_BASE_URL, document])
+
+  const handleContentSave = async () => {
+    if (!document || !API_BASE_URL) return
+    if (!supportsContentEditing || !canEditContent) return
+
+    const token = getAuthToken()
+    if (!token) {
+      setContentError('No authentication token found')
+      return
+    }
+
+    setContentSaving(true)
+    setContentError(null)
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/documents/${document.id}/content`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          content,
+          change_summary: contentChangeSummary || undefined
+        })
+      })
+
+      if (!response.ok) {
+        const errorBody = await response.json().catch(() => ({}))
+        throw new Error(errorBody.detail || 'Failed to update document content')
+      }
+
+      const data = await response.json()
+      setInitialContent(data.content || content)
+      setContent(data.content || content)
+      setContentMessage(data.message || 'Document content updated successfully')
+      setContentChangeSummary('')
+      setViewerRefreshKey(prev => prev + 1)
+      await fetchDocumentVersions()
+      onRefresh?.()
+    } catch (err: any) {
+      setContentError(err.message || 'Failed to update document content')
+    } finally {
+      setContentSaving(false)
+    }
+  }
+
+  const handleVersionDownload = async (versionId: number) => {
+    if (!document || !API_BASE_URL) return
+    const token = getAuthToken()
+    if (!token) {
+      setVersionsError('No authentication token found')
+      return
+    }
+
+    setVersionsError(null)
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/documents/${document.id}/versions/${versionId}/download`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      })
+
+      if (!response.ok) {
+        throw new Error('Failed to download document version')
+      }
+
+      const blob = await response.blob()
+      const url = window.URL.createObjectURL(blob)
+      const anchor = window.document.createElement('a')
+      anchor.href = url
+      anchor.download = document.filename
+      anchor.click()
+      window.URL.revokeObjectURL(url)
+    } catch (error) {
+      console.error('Error downloading version:', error)
+      setVersionsError('Failed to download the selected version')
+    }
+  }
+
+  const isContentDirty = supportsContentEditing && canEditContent && content !== initialContent
+  const editTabDisabled = !supportsContentEditing
+  const formatVersionDate = (value: string) => new Date(value).toLocaleString()
 
   const fetchTemplateSuggestions = async () => {
     const token = getAuthToken()
@@ -578,25 +775,191 @@ export function DocumentEditor({
                 )}
               </CardContent>
             </Card>
+
+            <Card>
+              <CardContent className="p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-sm font-medium">
+                    <History className="h-4 w-4 text-primary" />
+                    Version History
+                  </div>
+                  <span className="text-xs text-muted-foreground">Current: v{document?.version}</span>
+                </div>
+                {versionsError && (
+                  <Alert variant="destructive">
+                    <AlertTitle>Unable to load versions</AlertTitle>
+                    <AlertDescription>{versionsError}</AlertDescription>
+                  </Alert>
+                )}
+                {versionsLoading ? (
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Loading versions...
+                  </div>
+                ) : versions.length > 0 ? (
+                  <div className="space-y-3">
+                    {versions.map((version) => (
+                      <div key={version.id} className="rounded border p-3 space-y-1 bg-muted/30">
+                        <div className="flex items-center justify-between text-sm font-medium">
+                          <span>Version {version.version}</span>
+                          <Button variant="outline" size="sm" onClick={() => handleVersionDownload(version.id)}>
+                            <Download className="h-3 w-3 mr-1" />
+                            Download
+                          </Button>
+                        </div>
+                        <p className="text-xs text-muted-foreground">{formatVersionDate(version.created_at)}</p>
+                        {version.change_summary && (
+                          <p className="text-xs text-muted-foreground">Notes: {version.change_summary}</p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground">
+                    No previous versions captured yet. Save content changes to build history.
+                  </p>
+                )}
+              </CardContent>
+            </Card>
           </div>
 
           {/* Right Panel - Document Viewer/Editor */}
           <div className="space-y-4">
             <Card>
-              <CardContent className="p-4">
-                <div className="flex items-center justify-between mb-4">
+              <CardContent className="p-4 space-y-4">
+                <div className="flex items-center justify-between">
                   <h3 className="font-semibold text-lg">Document Content</h3>
                   <Button variant="outline" size="sm" onClick={onDownload}>
                     <Download className="h-4 w-4 mr-1" />
                     Download
                   </Button>
                 </div>
-                <DocumentViewer
-                  documentId={document.id}
-                  filename={document.filename}
-                  mimeType={document.mime_type}
-                  showDownload={false}
-                />
+                <Tabs
+                  value={contentTab}
+                  onValueChange={(value) => setContentTab(value as 'preview' | 'edit')}
+                  className="space-y-4"
+                >
+                  <TabsList className="grid w-full grid-cols-2">
+                    <TabsTrigger value="preview" className="flex items-center gap-2 text-sm">
+                      <Eye className="h-4 w-4" />
+                      Preview
+                    </TabsTrigger>
+                    <TabsTrigger
+                      value="edit"
+                      className="flex items-center gap-2 text-sm"
+                      disabled={editTabDisabled}
+                    >
+                      <Edit className="h-4 w-4" />
+                      Edit
+                    </TabsTrigger>
+                  </TabsList>
+                  <TabsContent value="preview" className="space-y-4">
+                    <DocumentViewer
+                      documentId={document.id}
+                      filename={document.filename}
+                      mimeType={document.mime_type}
+                      showDownload={false}
+                      refreshKey={viewerRefreshKey}
+                    />
+                    {contentMessage && !supportsContentEditing && (
+                      <p className="text-xs text-muted-foreground">{contentMessage}</p>
+                    )}
+                  </TabsContent>
+                  <TabsContent value="edit" className="space-y-4">
+                    {contentLoading ? (
+                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        Loading editable content...
+                      </div>
+                    ) : !supportsContentEditing ? (
+                      <Alert variant="destructive">
+                        <AlertTitle>Editing not available</AlertTitle>
+                        <AlertDescription>
+                          {contentMessage || 'Online editing is not supported for this file type.'}
+                        </AlertDescription>
+                      </Alert>
+                    ) : !canEditContent ? (
+                      <Alert variant="destructive">
+                        <AlertTitle>Insufficient permissions</AlertTitle>
+                        <AlertDescription>
+                          {contentMessage || 'You do not have permission to edit this document.'}
+                        </AlertDescription>
+                      </Alert>
+                    ) : (
+                      <div className="space-y-4">
+                        {contentError && (
+                          <Alert variant="destructive">
+                            <AlertTitle>Unable to load content</AlertTitle>
+                            <AlertDescription>{contentError}</AlertDescription>
+                          </Alert>
+                        )}
+                        {contentMessage && !contentError && (
+                          <Alert>
+                            <AlertTitle>Content ready</AlertTitle>
+                            <AlertDescription>{contentMessage}</AlertDescription>
+                          </Alert>
+                        )}
+                        {!isEditing && (
+                          <Alert>
+                            <AlertTitle>Enable editing</AlertTitle>
+                            <AlertDescription>
+                              Use the Edit toggle above to make changes to the document content.
+                            </AlertDescription>
+                          </Alert>
+                        )}
+                        <Textarea
+                          value={content}
+                          onChange={(event) => setContent(event.target.value)}
+                          rows={12}
+                          className="font-mono"
+                          disabled={!isEditing}
+                        />
+                        <div className="flex flex-wrap gap-2">
+                          <Button
+                            onClick={handleContentSave}
+                            disabled={!isEditing || contentSaving || !isContentDirty}
+                          >
+                            {contentSaving ? (
+                              <>
+                                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                                Saving
+                              </>
+                            ) : (
+                              <>
+                                <Save className="h-4 w-4 mr-2" />
+                                Save new version
+                              </>
+                            )}
+                          </Button>
+                          <Button
+                            variant="outline"
+                            onClick={() => {
+                              setContent(initialContent)
+                              setContentChangeSummary('')
+                            }}
+                            disabled={!isEditing || contentSaving || !isContentDirty}
+                          >
+                            <Undo2 className="h-4 w-4 mr-2" />
+                            Revert changes
+                          </Button>
+                        </div>
+                        <div className="space-y-2">
+                          <Label>Change summary</Label>
+                          <Textarea
+                            value={contentChangeSummary}
+                            onChange={(event) => setContentChangeSummary(event.target.value)}
+                            placeholder="Describe what changed in this version..."
+                            rows={3}
+                            disabled={!isEditing}
+                          />
+                          <p className="text-xs text-muted-foreground">
+                            Saving content creates a new document version that you can roll back to at any time.
+                          </p>
+                        </div>
+                      </div>
+                    )}
+                  </TabsContent>
+                </Tabs>
               </CardContent>
             </Card>
 
