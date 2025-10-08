@@ -21,14 +21,16 @@ interface DocumentViewerProps {
   mimeType?: string
   className?: string
   showDownload?: boolean
+  refreshKey?: string | number
 }
 
-export function DocumentViewer({ 
-  documentId, 
-  filename, 
+export function DocumentViewer({
+  documentId,
+  filename,
   mimeType,
   className = "",
-  showDownload = true
+  showDownload = true,
+  refreshKey
 }: DocumentViewerProps) {
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -36,12 +38,21 @@ export function DocumentViewer({
 
   useEffect(() => {
     loadDocument()
-  }, [documentId])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [documentId, refreshKey])
+
+  useEffect(() => {
+    return () => {
+      if (documentUrl) {
+        URL.revokeObjectURL(documentUrl)
+      }
+    }
+  }, [documentUrl])
 
   const loadDocument = async () => {
     setIsLoading(true)
     setError(null)
-    
+
     try {
       const token = localStorage.getItem('auth_token')
       if (!token) {
@@ -60,7 +71,12 @@ export function DocumentViewer({
 
       const blob = await response.blob()
       const url = URL.createObjectURL(blob)
-      setDocumentUrl(url)
+      setDocumentUrl(prev => {
+        if (prev) {
+          URL.revokeObjectURL(prev)
+        }
+        return url
+      })
       
     } catch (error) {
       console.error('Error loading document:', error)

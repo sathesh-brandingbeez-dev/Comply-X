@@ -323,11 +323,27 @@ class DocumentVersionResponse(BaseModel):
     change_summary: Optional[str] = None
     created_by_id: int
     created_at: datetime
-    
+
     created_by: Optional["UserResponse"] = None
-    
+
     class Config:
         from_attributes = True
+
+
+class DocumentContentResponse(BaseModel):
+    document_id: int
+    filename: str
+    mime_type: str
+    version: str
+    content: str
+    supports_editing: bool
+    can_edit: bool
+    message: Optional[str] = None
+
+
+class DocumentContentUpdate(BaseModel):
+    content: str
+    change_summary: Optional[str] = None
 
 class DocumentAccessRequest(BaseModel):
     user_id: Optional[int] = None
