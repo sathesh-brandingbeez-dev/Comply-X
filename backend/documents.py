@@ -3,7 +3,9 @@ from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import and_, or_, desc, asc, func
 from typing import List, Optional
+import base64
 import os
+import tempfile
 import shutil
 import hashlib
 import json
@@ -17,8 +19,8 @@ from fpdf import FPDF
 from database import get_db
 from auth import get_current_user, require_role
 from models import (
-    User, UserRole, Document, DocumentVersion, DocumentAccess, 
-    DocumentAuditLog, DocumentCategory, DocumentReview, DocumentStatus, 
+    User, UserRole, Document, DocumentVersion, DocumentAccess,
+    DocumentAuditLog, DocumentCategory, DocumentReview, DocumentStatus,
     DocumentType, AccessLevel, Department, Site, Country
 )
 from schemas import (
@@ -30,10 +32,12 @@ from schemas import (
     DocumentReviewUpdate, DocumentReviewResponse, DocumentUploadResponse,
     DocumentStats
 )
+from font_assets import DEJAVU_SANS_TTF_BASE64
 
 router = APIRouter()
 
 # Configuration
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 UPLOAD_DIR = "uploads/documents"
 MAX_FILE_SIZE = 100 * 1024 * 1024  # 100MB
 ALLOWED_EXTENSIONS = {
@@ -43,12 +47,58 @@ ALLOWED_EXTENSIONS = {
 }
 
 VERSION_DIR = os.path.join(UPLOAD_DIR, "versions")
+FONT_DIR = os.path.join(BASE_DIR, "fonts")
+DEFAULT_PDF_FONT_NAME = "DejaVu"
+DEFAULT_PDF_FONT_PATH = os.path.join(FONT_DIR, "DejaVuSans.ttf")
+TEMP_DEFAULT_FONT_PATH: Optional[str] = None
+DEFAULT_PDF_FONT_BYTES: Optional[bytes] = None
 EDITABLE_EXTENSIONS = {'.pdf', '.txt', '.md', '.json', '.csv', '.docx'}
 TEXT_EXTENSIONS = {'.txt', '.md', '.json', '.csv'}
 
 # Ensure upload directory exists
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 os.makedirs(VERSION_DIR, exist_ok=True)
+os.makedirs(FONT_DIR, exist_ok=True)
+
+
+def ensure_default_pdf_font() -> Optional[str]:
+    """Ensure the bundled Unicode PDF font is available on disk."""
+
+    global TEMP_DEFAULT_FONT_PATH, DEFAULT_PDF_FONT_BYTES
+
+    if os.path.exists(DEFAULT_PDF_FONT_PATH):
+        return DEFAULT_PDF_FONT_PATH
+
+    if TEMP_DEFAULT_FONT_PATH and os.path.exists(TEMP_DEFAULT_FONT_PATH):
+        return TEMP_DEFAULT_FONT_PATH
+
+    if DEFAULT_PDF_FONT_BYTES is None:
+        if not DEJAVU_SANS_TTF_BASE64:
+            DEFAULT_PDF_FONT_BYTES = b""
+        else:
+            try:
+                DEFAULT_PDF_FONT_BYTES = base64.b64decode(DEJAVU_SANS_TTF_BASE64)
+            except Exception:
+                DEFAULT_PDF_FONT_BYTES = b""
+
+    if not DEFAULT_PDF_FONT_BYTES:
+        return None
+
+    font_bytes = DEFAULT_PDF_FONT_BYTES
+
+    try:
+        with open(DEFAULT_PDF_FONT_PATH, "wb") as font_file:
+            font_file.write(font_bytes)
+        return DEFAULT_PDF_FONT_PATH
+    except OSError:
+        try:
+            temp_font = tempfile.NamedTemporaryFile(delete=False, suffix=".ttf")
+            with temp_font:
+                temp_font.write(font_bytes)
+            TEMP_DEFAULT_FONT_PATH = temp_font.name
+            return TEMP_DEFAULT_FONT_PATH
+        except OSError:
+            return None
 
 def log_document_action(db: Session, document_id: int, user: User, action: str, 
                        details: dict = None, request: Request = None):
@@ -186,15 +236,28 @@ def create_updated_document_file(document: Document, content: str) -> str:
     if extension == '.pdf':
         pdf = FPDF()
         pdf.set_auto_page_break(auto=True, margin=15)
-        pdf.add_page()
-        pdf.set_font("Helvetica", size=12)
+        pdf.set_margins(15, 15, 15)
 
+        font_name = "Helvetica"
+        font_path = ensure_default_pdf_font()
+        if font_path:
+            try:
+                pdf.add_font(DEFAULT_PDF_FONT_NAME, "", font_path, uni=True)
+                font_name = DEFAULT_PDF_FONT_NAME
+            except RuntimeError:
+                font_name = "Helvetica"
+
+        pdf.add_page()
+        pdf.set_font(font_name, size=12)
+
+        effective_width = getattr(pdf, "epw", pdf.w - pdf.l_margin - pdf.r_margin)
         lines = normalized_content.splitlines() or [""]
         for line in lines:
             if line.strip() == "":
                 pdf.ln(8)
+                pdf.set_x(pdf.l_margin)
             else:
-                pdf.multi_cell(0, 8, line)
+                pdf.multi_cell(effective_width, 8, line)
 
         pdf.output(new_file_path)
         return new_file_path

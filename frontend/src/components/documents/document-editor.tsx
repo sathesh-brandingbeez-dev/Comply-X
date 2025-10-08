@@ -189,13 +189,6 @@ export function DocumentEditor({
   }, [isOpen, document])
 
   useEffect(() => {
-    if (isOpen && document) {
-      fetchDocumentContent()
-      fetchDocumentVersions()
-    }
-  }, [isOpen, document?.id, fetchDocumentContent, fetchDocumentVersions])
-
-  useEffect(() => {
     if (!isEditing) {
       setContentTab('preview')
     }
@@ -288,6 +281,13 @@ export function DocumentEditor({
       setVersionsLoading(false)
     }
   }, [API_BASE_URL, document])
+
+  useEffect(() => {
+    if (isOpen && document) {
+      fetchDocumentContent()
+      fetchDocumentVersions()
+    }
+  }, [isOpen, document?.id, fetchDocumentContent, fetchDocumentVersions])
 
   const handleContentSave = async () => {
     if (!document || !API_BASE_URL) return
