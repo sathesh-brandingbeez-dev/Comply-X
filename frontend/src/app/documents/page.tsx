@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { DashboardLayout } from '@/components/layout/dashboard-layout'
 import { DocumentsList } from '@/components/documents/documents-list'
 import { DocumentUpload } from '@/components/documents/document-upload'
@@ -71,17 +71,25 @@ export default function DocumentsPage() {
   const [searchParams, setSearchParams] = useState<DocumentSearchParams>({
     page: 1,
     size: 20,
-    sort_by: 'created_at',
+    sort_by: 'updated_at',
     sort_order: 'desc'
   })
   const [totalCount, setTotalCount] = useState(0)
   const [totalPages, setTotalPages] = useState(1)
   const [aiSearchState, setAiSearchState] = useState<AISearchState>({ plan: null, query: null })
-  const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "https://comply-x.onrender.com";
+  const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'https://comply-x.onrender.com'
 
-    if (!API_BASE_URL) {
-      console.error("❌ NEXT_PUBLIC_API_URL is not defined. Please set it in your environment variables.");
-    }
+  if (!API_BASE_URL) {
+    console.error('❌ NEXT_PUBLIC_API_URL is not defined. Please set it in your environment variables.')
+  }
+
+  const orderDocumentsByUpdatedAt = useCallback(
+    (docs: Document[]) =>
+      docs
+        .slice()
+        .sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()),
+    []
+  )
   const fetchDocuments = async (params: DocumentSearchParams = searchParams) => {
     try {
       setLoading(true)
@@ -107,7 +115,8 @@ export default function DocumentsPage() {
 
       if (response.ok) {
         const data = await response.json()
-        setDocuments(data.documents)
+        const ordered = orderDocumentsByUpdatedAt(data.documents ?? [])
+        setDocuments(ordered)
         setTotalCount(data.total_count)
         setTotalPages(data.total_pages)
         setAiSearchState({ plan: null, query: null })
@@ -155,7 +164,8 @@ export default function DocumentsPage() {
 
       if (response.ok) {
         const data = await response.json()
-        setDocuments(data.results)
+        const ordered = orderDocumentsByUpdatedAt(data.results ?? [])
+        setDocuments(ordered)
         setTotalCount(data.total_count)
         setTotalPages(data.total_pages)
       } else {
@@ -179,7 +189,7 @@ export default function DocumentsPage() {
   }
 
   const handleAISearchResult = (result: { plan: DocumentAISearchPlan; documents: Document[]; totalCount: number; totalPages: number; query: string }) => {
-    setDocuments(result.documents)
+    setDocuments(orderDocumentsByUpdatedAt(result.documents ?? []))
     setTotalCount(result.totalCount)
     setTotalPages(result.totalPages)
     setLoading(false)
