@@ -448,11 +448,23 @@ flowchart TD
 
 #### Document Operations
 - `POST /api/documents/upload` - Upload new document
-- `GET /api/documents/search` - Search and filter documents  
+- `GET /api/documents/search` - Search and filter documents
 - `GET /api/documents/{id}` - Get document details
 - `GET /api/documents/{id}/download` - Download document
 - `PUT /api/documents/{id}` - Update document metadata
 - `DELETE /api/documents/{id}` - Delete document
+
+#### Visual Editing (OnlyOffice)
+- `POST /api/documents/{id}/onlyoffice/session` - Issue a time-bound OnlyOffice configuration and signed download link.
+- `GET /api/documents/shared/{token}` - Serve document binaries to the OnlyOffice Document Server using a short-lived token.
+- `POST /api/documents/{id}/onlyoffice/callback/{session_id}` - Receive save events from the Document Server and persist new versions.
+
+**Configuration:**
+- `ONLYOFFICE_DOCUMENT_SERVER_URL` &mdash; base URL of the OnlyOffice Document Server (e.g. `https://docs.example.com`).
+- `ONLYOFFICE_SHARE_TOKEN_EXPIRE_MINUTES` &mdash; optional override for session lifetime (default: 30 minutes).
+- `ONLYOFFICE_JWT_SECRET` / `ONLYOFFICE_JWT_ALGORITHM` &mdash; optional JWT signing for the OnlyOffice config payload.
+
+When configured, PDF/DOCX/PPTX/XLSX files open inside the embedded OnlyOffice editor so formatting, layout, and styles remain intact while editing.
 
 #### Access Control
 - `POST /api/documents/{id}/access` - Grant/modify access
