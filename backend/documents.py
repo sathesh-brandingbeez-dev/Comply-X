@@ -697,6 +697,7 @@ async def get_document_content(
         content=content,
         supports_editing=supports_editing,
         can_edit=can_edit,
+        supports_onlyoffice=use_onlyoffice,
         message=message
     )
 
@@ -805,6 +806,7 @@ async def update_document_content(
         content=payload.content,
         supports_editing=True,
         can_edit=True,
+        supports_onlyoffice=False,
         message="Document content updated successfully"
     )
 

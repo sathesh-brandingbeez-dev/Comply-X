@@ -338,6 +338,7 @@ class DocumentContentResponse(BaseModel):
     content: str
     supports_editing: bool
     can_edit: bool
+    supports_onlyoffice: bool = False
     message: Optional[str] = None
 
 
