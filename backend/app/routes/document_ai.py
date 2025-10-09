@@ -208,6 +208,62 @@ def _fallback_document_recommendations(
     }
 
 
+def _normalise_raw_payload(raw_value: Any) -> Optional[str]:
+    if raw_value is None:
+        return None
+    if isinstance(raw_value, str):
+        return raw_value
+    try:
+        return json.dumps(raw_value, default=str)
+    except TypeError:
+        return str(raw_value)
+
+
+def _build_recommendation_response(
+    analysis: Dict[str, Any], *, accessible_docs: List[Document]
+) -> DocumentAIRecommendationResponse:
+    recommendations: List[DocumentAIRecommendation] = []
+    recommended_docs: Dict[int, Document] = {}
+
+    for item in analysis.get("recommendations", []):
+        try:
+            doc_id = int(item.get("id"))
+        except (TypeError, ValueError):
+            continue
+
+        reason = item.get("reason") or item.get("explanation")
+        priority = item.get("priority")
+        recommendations.append(
+            DocumentAIRecommendation(
+                id=doc_id,
+                title=str(item.get("title", "")),
+                reason=reason,
+                priority=priority,
+            )
+        )
+
+        if doc_id in recommended_docs:
+            continue
+
+        doc_match = next((doc for doc in accessible_docs if doc.id == doc_id), None)
+        if doc_match:
+            recommended_docs[doc_id] = doc_match
+
+    document_responses: List[DocumentListResponse] = []
+    for doc in recommended_docs.values():
+        try:
+            document_responses.append(DocumentListResponse.model_validate(doc))
+        except ValidationError:
+            logger.warning("Skipping document %s due to validation error", getattr(doc, "id", "<unknown>"))
+
+    return DocumentAIRecommendationResponse(
+        recommendations=recommendations,
+        documents=document_responses,
+        summary=analysis.get("summary"),
+        raw=_normalise_raw_payload(analysis.get("raw")),
+    )
+
+
 @router.post("/categorize", response_model=DocumentAICategorizeResponse)
 def ai_categorize_document(
     payload: DocumentAICategorizeRequest,
@@ -427,90 +483,65 @@ def ai_recommend_documents(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> DocumentAIRecommendationResponse:
+    recent_docs = (
+        db.query(Document)
+        .filter(Document.created_by_id == current_user.id, Document.is_current_version == True)
+        .order_by(Document.updated_at.desc())
+        .limit(10)
+        .all()
+    )
+    recent_payload = [_serialize_document(doc) for doc in recent_docs]
+
+    accessible_docs = (
+        db.query(Document)
+        .filter(Document.is_current_version == True)
+        .order_by(Document.updated_at.desc())
+        .limit(75)
+        .all()
+    )
+    accessible_payload = [_serialize_document(doc) for doc in accessible_docs]
+
+    fallback_analysis = _fallback_document_recommendations(
+        current_user=current_user,
+        recent_docs=recent_docs,
+        accessible_docs=accessible_docs,
+    )
+
+    user_profile = {
+        "id": current_user.id,
+        "role": current_user.role.value if isinstance(current_user.role, UserRole) else str(current_user.role),
+        "department_id": current_user.department_id,
+    }
+
+    analysis: Dict[str, Any] = fallback_analysis
+
     try:
-        recent_docs = (
-            db.query(Document)
-            .filter(Document.created_by_id == current_user.id, Document.is_current_version == True)
-            .order_by(Document.updated_at.desc())
-            .limit(10)
-            .all()
+        ai_analysis = recommend_documents(
+            user_profile=user_profile,
+            recent_documents=recent_payload,
+            available_documents=accessible_payload,
         )
-        recent_payload = [_serialize_document(doc) for doc in recent_docs]
 
-        accessible_docs = (
-            db.query(Document)
-            .filter(Document.is_current_version == True)
-            .order_by(Document.updated_at.desc())
-            .limit(75)
-            .all()
-        )
-        accessible_payload = [_serialize_document(doc) for doc in accessible_docs]
-
-        user_profile = {
-            "id": current_user.id,
-            "role": current_user.role.value if isinstance(current_user.role, UserRole) else str(current_user.role),
-            "department_id": current_user.department_id,
-        }
-
-        try:
-            analysis = recommend_documents(
-                user_profile=user_profile,
-                recent_documents=recent_payload,
-                available_documents=accessible_payload,
-            )
-        except Exception as exc:  # noqa: BLE001 - broad to ensure graceful fallbacks
-            logger.warning("Falling back to heuristic document recommendations: %s", exc)
-            analysis = _fallback_document_recommendations(
-                current_user=current_user,
-                recent_docs=recent_docs,
-                accessible_docs=accessible_docs,
-            )
-
-        if not isinstance(analysis, dict):
+        if isinstance(ai_analysis, dict):
+            analysis = ai_analysis
+        else:
             logger.warning(
-                "Unexpected recommendation payload type %s; substituting fallback structure",
-                type(analysis).__name__,
+                "Unexpected recommendation payload type %s; reverting to fallback",
+                type(ai_analysis).__name__,
             )
-            analysis = {
-                "recommendations": [],
-                "summary": None,
-                "raw": json.dumps(analysis, default=str),
-            }
+            fallback_raw = _normalise_raw_payload(ai_analysis)
+            if fallback_raw and not isinstance(fallback_analysis.get("raw"), str):
+                fallback_analysis = {**fallback_analysis, "raw": fallback_raw}
+            analysis = fallback_analysis
+    except Exception as exc:  # noqa: BLE001 - broad to ensure graceful fallbacks
+        logger.warning("Falling back to heuristic document recommendations: %s", exc)
+        analysis = fallback_analysis
 
-        recommendations: List[DocumentAIRecommendation] = []
-        recommended_docs: Dict[int, Document] = {}
-
-        for item in analysis.get("recommendations", []):
-            try:
-                doc_id = int(item.get("id"))
-            except (TypeError, ValueError):
-                continue
-            reason = item.get("reason") or item.get("explanation")
-            priority = item.get("priority")
-            recommendations.append(
-                DocumentAIRecommendation(id=doc_id, title=str(item.get("title", "")), reason=reason, priority=priority)
-            )
-            if doc_id in recommended_docs:
-                continue
-            doc_match = next((doc for doc in accessible_docs if doc.id == doc_id), None)
-            if doc_match:
-                recommended_docs[doc_id] = doc_match
-
-        document_responses: List[DocumentListResponse] = []
-        for doc in recommended_docs.values():
-            try:
-                document_responses.append(DocumentListResponse.model_validate(doc))
-            except ValidationError:
-                logger.warning("Skipping document %s due to validation error", getattr(doc, "id", "<unknown>"))
-
-        return DocumentAIRecommendationResponse(
-            recommendations=recommendations,
-            documents=document_responses,
-            summary=analysis.get("summary"),
-            raw=analysis.get("raw"),
-        )
-    except RuntimeError as exc:
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    try:
+        return _build_recommendation_response(analysis, accessible_docs=accessible_docs)
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("Failed to assemble recommendation response; using fallback payload", exc_info=exc)
+        return _build_recommendation_response(fallback_analysis, accessible_docs=accessible_docs)
 
 
 @router.post("/editor/completion", response_model=DocumentAICompletionResponse)
