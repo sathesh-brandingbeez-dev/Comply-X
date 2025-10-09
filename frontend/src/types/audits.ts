@@ -193,8 +193,14 @@ export interface DepartmentOption {
 
 export interface UserOption {
   id: number
-  first_name: string
-  last_name: string
+  username?: string
+  first_name?: string | null
+  last_name?: string | null
   email?: string
   role?: string
+}
+
+export interface AuditWizardOptions {
+  departments: DepartmentOption[]
+  users: UserOption[]
 }

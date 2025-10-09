@@ -43,9 +43,62 @@ from schemas import (
     AuditSchedulingAIRequest,
     AuditSchedulingAIResponse,
     AuditTimelineEntry,
+    AuditWizardOptions,
 )
 
 router = APIRouter()
+
+
+@router.get("/options", response_model=AuditWizardOptions, summary="Get options for audit creation")
+def get_audit_wizard_options(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    # current_user is resolved to ensure the endpoint requires authentication.
+    _ = current_user
+
+    departments = (
+        db.query(Department)
+        .filter(Department.is_active == True)  # noqa: E712 - intentional comparison to literal true
+        .order_by(Department.name.asc())
+        .all()
+    )
+
+    users = (
+        db.query(User)
+        .filter(User.is_active == True)  # noqa: E712 - intentional comparison to literal true
+        .order_by(User.first_name.asc(), User.last_name.asc(), User.id.asc())
+        .all()
+    )
+
+    department_options = [
+        {"id": department.id, "name": department.name} for department in departments
+    ]
+
+    user_options: List[dict[str, object]] = []
+    for user in users:
+        first_name = (user.first_name or "").strip()
+        last_name = (user.last_name or "").strip()
+
+        if not first_name and not last_name:
+            fallback_identifier = (user.username or user.email or "").strip()
+            if fallback_identifier:
+                first_name = fallback_identifier
+            else:
+                first_name = f"User {user.id}"
+
+        user_options.append(
+            {
+                "id": user.id,
+                "username": user.username,
+                "first_name": first_name,
+                "last_name": last_name,
+                "email": user.email,
+                "role": user.role.value if user.role else None,
+            }
+        )
+
+    return AuditWizardOptions(departments=department_options, users=user_options)
 
 
 def _collect_department_lookup(db: Session, audits: Sequence[AuditModel]) -> Dict[int, str]:
