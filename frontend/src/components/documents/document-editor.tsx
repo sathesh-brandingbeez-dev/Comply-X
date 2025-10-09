@@ -310,6 +310,7 @@ export function DocumentEditor({
     () => document?.filename?.split('.').pop()?.toLowerCase() ?? '',
     [document?.filename]
   )
+  const isPdfDocument = fileExtension === 'pdf'
   const [onlyOfficeSession, setOnlyOfficeSession] = useState<OnlyOfficeSession | null>(null)
   const [onlyOfficeLoading, setOnlyOfficeLoading] = useState(false)
   const [onlyOfficeError, setOnlyOfficeError] = useState<string | null>(null)
@@ -1322,8 +1323,16 @@ export function DocumentEditor({
                           </Alert>
                         )}
                         {contentMessage && !contentError && (
-                          <Alert>
-                            <AlertTitle>Content ready</AlertTitle>
+                          <Alert
+                            className={cn(
+                              isPdfDocument
+                                ? 'border-yellow-300 bg-yellow-50 text-yellow-900'
+                                : undefined
+                            )}
+                          >
+                            <AlertTitle>
+                              {isPdfDocument ? 'PDF formatting notice' : 'Content ready'}
+                            </AlertTitle>
                             <AlertDescription>{contentMessage}</AlertDescription>
                           </Alert>
                         )}
