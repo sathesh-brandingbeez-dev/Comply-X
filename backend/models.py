@@ -615,6 +615,35 @@ class RiskLevel(str, enum.Enum):
     HIGH = "high"
     CRITICAL = "critical"
 
+
+class AuditType(str, enum.Enum):
+    INTERNAL = "internal_audit"
+    COMPLIANCE = "compliance_audit"
+    QUALITY = "quality_audit"
+    FINANCIAL = "financial_audit"
+    IT_SECURITY = "it_security_audit"
+    RISK_ASSESSMENT = "risk_assessment_audit"
+    OPERATIONAL = "operational_audit"
+    ENVIRONMENTAL = "environmental_audit"
+    HEALTH_SAFETY = "health_safety_audit"
+    CUSTOM = "custom_template"
+
+
+class AuditStatus(str, enum.Enum):
+    DRAFT = "draft"
+    SCHEDULED = "scheduled"
+    IN_PROGRESS = "in_progress"
+    COMPLETED = "completed"
+    ON_HOLD = "on_hold"
+
+
+class AuditQuestionType(str, enum.Enum):
+    YES_NO = "yes_no"
+    MULTIPLE_CHOICE = "multiple_choice"
+    TEXT = "text"
+    RATING = "rating"
+    EVIDENCE = "evidence"
+
 class QuestionnaireStatus(str, enum.Enum):
     DRAFT = "draft"
     ACTIVE = "active"
@@ -1064,3 +1093,97 @@ class TaskDependency(Base):
     id = Column(Integer, primary_key=True)
     predecessor_id = Column(Integer, ForeignKey("project_tasks.id", ondelete="CASCADE"), index=True)
     successor_id = Column(Integer, ForeignKey("project_tasks.id", ondelete="CASCADE"), index=True)
+
+
+class Audit(Base):
+    __tablename__ = "audits"
+
+    id = Column(Integer, primary_key=True, index=True)
+    title = Column(String(200), nullable=False)
+    audit_type = Column(Enum(AuditType), nullable=False)
+    status = Column(Enum(AuditStatus), nullable=False, default=AuditStatus.DRAFT)
+    risk_level = Column(Enum(RiskLevel), nullable=False, default=RiskLevel.MEDIUM)
+
+    scope = Column(Text, nullable=False)
+    objective = Column(Text, nullable=False)
+    compliance_frameworks = Column(JSON, nullable=True, default=list)
+    department_ids = Column(JSON, nullable=False, default=list)
+
+    planned_start_date = Column(Date, nullable=False)
+    planned_end_date = Column(Date, nullable=False)
+    estimated_duration_hours = Column(Integer, nullable=False, default=0)
+    progress = Column(Integer, nullable=False, default=0)
+
+    lead_auditor_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    audit_team_ids = Column(JSON, nullable=True, default=list)
+    external_auditors = Column(Text, nullable=True)
+    auditee_contact_ids = Column(JSON, nullable=True, default=list)
+    meeting_room = Column(String(200), nullable=True)
+    special_requirements = Column(Text, nullable=True)
+
+    notification_settings = Column(JSON, nullable=True, default=dict)
+    email_templates = Column(JSON, nullable=True, default=dict)
+    distribution_list_ids = Column(JSON, nullable=True, default=list)
+    cc_list = Column(JSON, nullable=True, default=list)
+    bcc_list = Column(JSON, nullable=True, default=list)
+    launch_option = Column(String(50), nullable=False, default="draft")
+
+    resource_allocation = Column(JSON, nullable=True, default=list)
+    timeline = Column(JSON, nullable=True, default=list)
+
+    created_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    lead_auditor = relationship("User", foreign_keys=[lead_auditor_id])
+    created_by = relationship("User", foreign_keys=[created_by_id])
+    sections = relationship(
+        "AuditChecklistSection",
+        back_populates="audit",
+        cascade="all, delete-orphan",
+        order_by="AuditChecklistSection.order_index",
+    )
+
+    @property
+    def departments(self):
+        return self.department_ids or []
+
+    @departments.setter
+    def departments(self, value):
+        self.department_ids = value
+
+
+class AuditChecklistSection(Base):
+    __tablename__ = "audit_checklist_sections"
+
+    id = Column(Integer, primary_key=True, index=True)
+    audit_id = Column(Integer, ForeignKey("audits.id", ondelete="CASCADE"), nullable=False)
+    title = Column(String(200), nullable=False)
+    description = Column(Text, nullable=True)
+    weight = Column(Integer, nullable=False, default=0)
+    is_required = Column(Boolean, default=False)
+    order_index = Column(Integer, nullable=False, default=0)
+
+    audit = relationship("Audit", back_populates="sections")
+    questions = relationship(
+        "AuditChecklistQuestion",
+        back_populates="section",
+        cascade="all, delete-orphan",
+        order_by="AuditChecklistQuestion.order_index",
+    )
+
+
+class AuditChecklistQuestion(Base):
+    __tablename__ = "audit_checklist_questions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    section_id = Column(Integer, ForeignKey("audit_checklist_sections.id", ondelete="CASCADE"), nullable=False)
+    question_text = Column(Text, nullable=False)
+    question_type = Column(Enum(AuditQuestionType), nullable=False)
+    evidence_required = Column(Boolean, default=False)
+    scoring_weight = Column(Integer, nullable=False, default=0)
+    risk_impact = Column(Enum(RiskLevel), nullable=False, default=RiskLevel.MEDIUM)
+    guidance_notes = Column(Text, nullable=True)
+    order_index = Column(Integer, nullable=False, default=0)
+
+    section = relationship("AuditChecklistSection", back_populates="questions")

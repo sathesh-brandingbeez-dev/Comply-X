@@ -144,6 +144,7 @@ export function DashboardSidebar({ className, isOpen = false, onClose }: Dashboa
       href === '/dashboard' ||
       href === '/documents' ||
       href === '/questionnaires' ||
+      href === '/audits' ||
       href === '/settings' ||
       href === '/calendar' ||
       href === '/fmea'
