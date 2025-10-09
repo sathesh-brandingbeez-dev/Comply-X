@@ -661,6 +661,8 @@ async def get_document_content(
     supports_editing = is_editable_type
     message = None
     content = ""
+    extension = os.path.splitext(document.filename)[1].lower()
+    is_pdf_document = extension == ".pdf"
     use_onlyoffice = bool(ONLYOFFICE_DOCUMENT_SERVER_URL and is_onlyoffice_supported(document))
 
     if use_onlyoffice:
@@ -671,6 +673,11 @@ async def get_document_content(
     if supports_editing:
         try:
             content = extract_document_content(document)
+            if is_pdf_document and not use_onlyoffice and not message:
+                message = (
+                    "Editing a PDF converts it to plain text for version tracking. "
+                    "Use the Preview tab to review the original layout and design."
+                )
         except FileNotFoundError:
             raise HTTPException(status_code=404, detail="Document file not found on server")
         except Exception as exc:
@@ -686,6 +693,10 @@ async def get_document_content(
             try:
                 # Still attempt to surface readable content when possible
                 content = extract_document_content(document)
+                if is_pdf_document and not message:
+                    message = (
+                        "PDF formatting is preserved only in the Preview tab. Inline editing is limited to extracted text."
+                    )
             except Exception:
                 content = ""
 
