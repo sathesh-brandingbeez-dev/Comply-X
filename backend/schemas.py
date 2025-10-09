@@ -14,6 +14,9 @@ from models import (
     FMEAType,
     FMEAStatus,
     ActionStatus,
+    AuditType,
+    AuditStatus,
+    AuditQuestionType,
 )
 from enum import Enum
 
@@ -1270,3 +1273,267 @@ class ProjectOut(ProjectBase):
     # tasks: List[TaskOut] = []  # optional if you want embedded
     class Config:
         from_attributes = True
+
+
+# --- Audit Builder ---
+class AuditChecklistQuestionBase(BaseModel):
+    question_text: str
+    question_type: AuditQuestionType
+    evidence_required: bool = False
+    scoring_weight: int = 0
+    risk_impact: RiskLevel = RiskLevel.MEDIUM
+    guidance_notes: Optional[str] = None
+    order_index: Optional[int] = None
+
+
+class AuditChecklistQuestionCreate(AuditChecklistQuestionBase):
+    pass
+
+
+class AuditChecklistQuestion(AuditChecklistQuestionBase):
+    id: int
+
+    class Config:
+        from_attributes = True
+
+
+class AuditChecklistSectionBase(BaseModel):
+    title: str
+    description: Optional[str] = None
+    weight: int = 0
+    is_required: bool = False
+    order_index: Optional[int] = None
+
+
+class AuditChecklistSectionCreate(AuditChecklistSectionBase):
+    questions: List[AuditChecklistQuestionCreate] = []
+
+
+class AuditChecklistSection(AuditChecklistSectionBase):
+    id: int
+    questions: List[AuditChecklistQuestion] = []
+
+    class Config:
+        from_attributes = True
+
+
+class AuditNotificationSettings(BaseModel):
+    audit_announcement: bool = True
+    daily_reminders: bool = False
+    progress_updates: bool = True
+    completion_notifications: bool = True
+
+
+class AuditEmailTemplates(BaseModel):
+    audit_announcement: Optional[str] = None
+    daily_reminder: Optional[str] = None
+    completion_notice: Optional[str] = None
+
+
+class AuditResourceAllocation(BaseModel):
+    user_id: int
+    user_name: Optional[str] = None
+    allocated_hours: int
+    role: Optional[str] = None
+
+
+class AuditTimelineEntry(BaseModel):
+    phase: str
+    start_date: date
+    end_date: date
+    completion: Optional[int] = None
+
+
+class AuditBase(BaseModel):
+    title: str = Field(..., max_length=200)
+    audit_type: AuditType
+    risk_level: RiskLevel = RiskLevel.MEDIUM
+    departments: List[int] = Field(default_factory=list)
+    scope: str = Field(..., max_length=1000)
+    objective: str = Field(..., max_length=1000)
+    compliance_frameworks: List[str] = Field(default_factory=list)
+    planned_start_date: date
+    planned_end_date: date
+    estimated_duration_hours: int = 0
+    lead_auditor_id: int
+    audit_team_ids: List[int] = Field(default_factory=list)
+    external_auditors: Optional[str] = None
+    auditee_contact_ids: List[int] = Field(default_factory=list)
+    meeting_room: Optional[str] = None
+    special_requirements: Optional[str] = None
+    notification_settings: AuditNotificationSettings = AuditNotificationSettings()
+    email_templates: AuditEmailTemplates = AuditEmailTemplates()
+    distribution_list_ids: List[int] = Field(default_factory=list)
+    cc_list: List[str] = Field(default_factory=list)
+    bcc_list: List[str] = Field(default_factory=list)
+    launch_option: str = "draft"
+    resource_allocation: List[AuditResourceAllocation] = Field(default_factory=list)
+    timeline: List[AuditTimelineEntry] = Field(default_factory=list)
+
+
+class AuditCreate(AuditBase):
+    sections: List[AuditChecklistSectionCreate] = Field(default_factory=list)
+
+
+class AuditUpdate(BaseModel):
+    title: Optional[str] = None
+    audit_type: Optional[AuditType] = None
+    risk_level: Optional[RiskLevel] = None
+    status: Optional[AuditStatus] = None
+    departments: Optional[List[int]] = None
+    scope: Optional[str] = None
+    objective: Optional[str] = None
+    compliance_frameworks: Optional[List[str]] = None
+    planned_start_date: Optional[date] = None
+    planned_end_date: Optional[date] = None
+    estimated_duration_hours: Optional[int] = None
+    lead_auditor_id: Optional[int] = None
+    audit_team_ids: Optional[List[int]] = None
+    external_auditors: Optional[str] = None
+    auditee_contact_ids: Optional[List[int]] = None
+    meeting_room: Optional[str] = None
+    special_requirements: Optional[str] = None
+    notification_settings: Optional[AuditNotificationSettings] = None
+    email_templates: Optional[AuditEmailTemplates] = None
+    distribution_list_ids: Optional[List[int]] = None
+    cc_list: Optional[List[str]] = None
+    bcc_list: Optional[List[str]] = None
+    launch_option: Optional[str] = None
+    sections: Optional[List[AuditChecklistSectionCreate]] = None
+    resource_allocation: Optional[List[AuditResourceAllocation]] = None
+    timeline: Optional[List[AuditTimelineEntry]] = None
+
+
+class Audit(AuditBase):
+    id: int
+    status: AuditStatus
+    progress: int
+    created_at: datetime
+    updated_at: datetime
+    lead_auditor_name: Optional[str] = None
+    department_names: List[str] = Field(default_factory=list)
+    sections: List[AuditChecklistSection] = Field(default_factory=list)
+
+    class Config:
+        from_attributes = True
+
+
+class AuditListItem(BaseModel):
+    id: int
+    title: str
+    audit_type: AuditType
+    departments: List[str]
+    start_date: date
+    end_date: date
+    status: AuditStatus
+    progress: int
+    lead_auditor: str
+    risk_level: RiskLevel
+
+
+class AuditCalendarEvent(BaseModel):
+    id: int
+    audit_id: int
+    title: str
+    start_date: date
+    end_date: date
+    status: AuditStatus
+    audit_type: AuditType
+    lead_auditor: str
+    department_names: List[str] = Field(default_factory=list)
+    risk_level: RiskLevel
+    quick_actions: List[str] = Field(default_factory=list)
+
+
+class AuditPlanningSummary(BaseModel):
+    total_audits: int
+    scheduled: int
+    in_progress: int
+    completed: int
+    overdue: int
+    average_progress: float
+
+
+class AuditAIRecommendations(BaseModel):
+    intelligent_schedule: List[str] = Field(default_factory=list)
+    resource_allocation: List[str] = Field(default_factory=list)
+    duration_predictions: List[str] = Field(default_factory=list)
+
+
+class AuditPlanningDashboard(BaseModel):
+    calendar_events: List[AuditCalendarEvent] = Field(default_factory=list)
+    legend: dict = Field(default_factory=dict)
+    audits: List[AuditListItem] = Field(default_factory=list)
+    summary: AuditPlanningSummary
+    ai_recommendations: AuditAIRecommendations
+
+
+class AuditBasicInfoAIRequest(BaseModel):
+    audit_type: AuditType
+    departments: List[str]
+    scope: Optional[str] = None
+    historical_risks: Optional[List[str]] = None
+
+
+class AuditBasicInfoAIResponse(BaseModel):
+    suggested_scope: str
+    suggested_objective: str
+    suggested_compliance_frameworks: List[str]
+    predicted_risk_level: RiskLevel
+    rationale: str
+
+
+class AuditSchedulingAIRequest(BaseModel):
+    audit_type: AuditType
+    risk_level: RiskLevel
+    start_date: date
+    end_date: date
+    lead_auditor_id: int
+    team_member_ids: List[int] = Field(default_factory=list)
+    auditee_contact_ids: List[int] = Field(default_factory=list)
+
+
+class AuditSchedulingAIResponse(BaseModel):
+    recommended_team: List[int]
+    resource_conflicts: List[str]
+    recommended_meeting_room: Optional[str]
+    suggested_duration_hours: int
+    allocation_plan: List[AuditResourceAllocation]
+
+
+class AuditChecklistAIRequest(BaseModel):
+    audit_type: AuditType
+    compliance_frameworks: List[str]
+    risk_level: RiskLevel
+
+
+class AuditChecklistAIResponse(BaseModel):
+    sections: List[AuditChecklistSectionCreate]
+    recommendations: List[str]
+
+
+class AuditNotificationAIRequest(BaseModel):
+    audit_type: AuditType
+    start_date: date
+    end_date: date
+    recipients: List[int]
+
+
+class AuditNotificationAIResponse(BaseModel):
+    notification_settings: AuditNotificationSettings
+    email_templates: AuditEmailTemplates
+    distribution_list_ids: List[int]
+    cc_list: List[str]
+    bcc_list: List[str]
+    timing_recommendations: List[str]
+
+
+class AuditReviewAIRequest(BaseModel):
+    audit: AuditCreate
+
+
+class AuditReviewAIResponse(BaseModel):
+    validation_messages: List[str]
+    optimisation_opportunities: List[str]
+    predicted_success_probability: float
+    launch_timing_recommendation: str

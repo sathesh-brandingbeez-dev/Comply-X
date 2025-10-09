@@ -13,7 +13,7 @@ const scriptPromises: Record<string, Promise<void>> = {}
 
 function loadOnlyOfficeScript(documentServerUrl: string): Promise<void> {
   const normalized = documentServerUrl.replace(/\/$/, '')
-  if (scriptPromises[normalized]) {
+  if (scriptPromises[normalized] !== undefined) {
     return scriptPromises[normalized]
   }
 
