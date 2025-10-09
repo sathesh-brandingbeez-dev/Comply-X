@@ -56,7 +56,7 @@ DEFAULT_PDF_FONT_NAME = "DejaVu"
 DEFAULT_PDF_FONT_PATH = os.path.join(FONT_DIR, "DejaVuSans.ttf")
 TEMP_DEFAULT_FONT_PATH: Optional[str] = None
 DEFAULT_PDF_FONT_BYTES: Optional[bytes] = None
-EDITABLE_EXTENSIONS = {'.pdf', '.txt', '.md', '.json', '.csv', '.docx'}
+EDITABLE_EXTENSIONS = {'.txt', '.md', '.json', '.csv', '.docx'}
 TEXT_EXTENSIONS = {'.txt', '.md', '.json', '.csv'}
 ONLYOFFICE_DOCUMENT_SERVER_URL = os.getenv("ONLYOFFICE_DOCUMENT_SERVER_URL", "").rstrip("/")
 ONLYOFFICE_SHARE_TOKEN_EXPIRE_MINUTES = int(os.getenv("ONLYOFFICE_SHARE_TOKEN_EXPIRE_MINUTES", "30"))
@@ -670,14 +670,17 @@ async def get_document_content(
         if not message:
             message = "This document opens in the OnlyOffice editor for visual editing."
 
+    if is_pdf_document and not use_onlyoffice:
+        supports_editing = False
+        if not message:
+            message = (
+                "Inline editing is not available for PDF documents. "
+                "Use the Preview tab to view the original formatting or download the file."
+            )
+
     if supports_editing:
         try:
             content = extract_document_content(document)
-            if is_pdf_document and not use_onlyoffice and not message:
-                message = (
-                    "Editing a PDF converts it to plain text for version tracking. "
-                    "Use the Preview tab to review the original layout and design."
-                )
         except FileNotFoundError:
             raise HTTPException(status_code=404, detail="Document file not found on server")
         except Exception as exc:
@@ -689,14 +692,10 @@ async def get_document_content(
         elif not is_editable_type and not use_onlyoffice:
             message = "Editing is not supported for this file type."
 
-        if not use_onlyoffice:
+        if not use_onlyoffice and not is_pdf_document:
             try:
                 # Still attempt to surface readable content when possible
                 content = extract_document_content(document)
-                if is_pdf_document and not message:
-                    message = (
-                        "PDF formatting is preserved only in the Preview tab. Inline editing is limited to extracted text."
-                    )
             except Exception:
                 content = ""
 
