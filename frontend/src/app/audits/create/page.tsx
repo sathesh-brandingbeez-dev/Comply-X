@@ -265,6 +265,21 @@ function AuditCreationContent() {
     [departmentOptions, basicInfo.departments],
   )
 
+  const selectedAuditTeamMembers = useMemo(
+    () => userOptions.filter((option) => scheduling.auditTeamIds.includes(option.id)),
+    [userOptions, scheduling.auditTeamIds],
+  )
+
+  const selectedAuditeeContacts = useMemo(
+    () => userOptions.filter((option) => scheduling.auditeeContacts.includes(option.id)),
+    [userOptions, scheduling.auditeeContacts],
+  )
+
+  const distributionListMembers = useMemo(
+    () => userOptions.filter((option) => notifications.distributionList.includes(option.id)),
+    [userOptions, notifications.distributionList],
+  )
+
   useEffect(() => {
     if (!basicInfo.auditType || basicInfo.departments.length === 0 || departmentOptions.length === 0) {
       return
@@ -300,6 +315,40 @@ function AuditCreationContent() {
     loadBasicInfoAI()
     return () => controller.abort()
   }, [basicInfo.auditType, basicInfo.departments, departmentOptions, selectedDepartments, basicInfo.scope])
+
+  useEffect(() => {
+    setNotifications((prev) => {
+      const combined = Array.from(new Set([...scheduling.auditTeamIds, ...scheduling.auditeeContacts]))
+      const isSameLength = combined.length === prev.distributionList.length
+      const hasSameMembers = isSameLength && combined.every((id) => prev.distributionList.includes(id))
+      if (hasSameMembers) {
+        return prev
+      }
+      return { ...prev, distributionList: combined }
+    })
+  }, [scheduling.auditTeamIds, scheduling.auditeeContacts])
+
+  useEffect(() => {
+    if (!scheduling.startDate && !scheduling.endDate) {
+      return
+    }
+    setTimeline((prev) =>
+      prev.map((entry, index, arr) => {
+        const updated: AuditTimelineEntry = { ...entry }
+        if (scheduling.startDate) {
+          if (index === 0 || !updated.start_date) {
+            updated.start_date = scheduling.startDate
+          }
+        }
+        if (scheduling.endDate) {
+          if (index === arr.length - 1 || !updated.end_date) {
+            updated.end_date = scheduling.endDate
+          }
+        }
+        return updated
+      }),
+    )
+  }, [scheduling.startDate, scheduling.endDate])
 
   const handleSchedulingAI = async () => {
     if (!scheduling.startDate || !scheduling.endDate || !scheduling.leadAuditorId) {
@@ -461,13 +510,11 @@ function AuditCreationContent() {
     }))
   }
 
-  const toggleDistribution = (id: number) => {
-    setNotifications((prev) => ({
-      ...prev,
-      distributionList: prev.distributionList.includes(id)
-        ? prev.distributionList.filter((item) => item !== id)
-        : [...prev.distributionList, id],
-    }))
+  const openNativeDatePicker = (input: HTMLInputElement) => {
+    const picker = (input as HTMLInputElement & { showPicker?: () => void }).showPicker
+    if (typeof picker === "function") {
+      picker.call(input)
+    }
   }
 
   const addCcEmail = (email: string) => {
@@ -580,7 +627,11 @@ function AuditCreationContent() {
       bcc_list: notifications.bccList,
       launch_option: "launch_immediately",
       resource_allocation: resourceAllocations,
-      timeline,
+      timeline: timeline.map((entry) => ({
+        ...entry,
+        start_date: entry.start_date || scheduling.startDate,
+        end_date: entry.end_date || scheduling.endDate,
+      })),
       sections: sectionPayloads,
       status: "draft",
       progress: 0,
@@ -870,6 +921,8 @@ function AuditCreationContent() {
                   <Input
                     type="date"
                     value={scheduling.startDate}
+                    onFocus={(event) => openNativeDatePicker(event.currentTarget)}
+                    onClick={(event) => openNativeDatePicker(event.currentTarget)}
                     onChange={(event) => {
                       const value = event.target.value
                       setScheduling((prev) => ({ ...prev, startDate: value }))
@@ -884,6 +937,8 @@ function AuditCreationContent() {
                   <Input
                     type="date"
                     value={scheduling.endDate}
+                    onFocus={(event) => openNativeDatePicker(event.currentTarget)}
+                    onClick={(event) => openNativeDatePicker(event.currentTarget)}
                     onChange={(event) => {
                       const value = event.target.value
                       setScheduling((prev) => ({ ...prev, endDate: value }))
@@ -964,6 +1019,37 @@ function AuditCreationContent() {
                       </label>
                     ))}
                   </div>
+                </div>
+              </div>
+
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="space-y-2">
+                  <Label className="text-sm font-semibold text-gray-700">Selected Audit Team</Label>
+                  {selectedAuditTeamMembers.length === 0 ? (
+                    <p className="text-sm text-gray-500">No team members selected yet.</p>
+                  ) : (
+                    <div className="flex flex-wrap gap-2">
+                      {selectedAuditTeamMembers.map((member) => (
+                        <Badge key={member.id} variant="secondary">
+                          {member.first_name} {member.last_name}
+                        </Badge>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-sm font-semibold text-gray-700">Selected Auditee Contacts</Label>
+                  {selectedAuditeeContacts.length === 0 ? (
+                    <p className="text-sm text-gray-500">No auditee contacts selected yet.</p>
+                  ) : (
+                    <div className="flex flex-wrap gap-2">
+                      {selectedAuditeeContacts.map((contact) => (
+                        <Badge key={contact.id} variant="outline">
+                          {contact.first_name} {contact.last_name}
+                        </Badge>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -1269,19 +1355,24 @@ function AuditCreationContent() {
               <div className="grid gap-4 md:grid-cols-2">
                 <div className="space-y-2">
                   <Label>Distribution List *</Label>
-                  <div className="grid max-h-36 gap-2 overflow-y-auto rounded-lg border border-gray-200 p-3 text-sm">
-                    {userOptions.map((user) => (
-                      <label key={user.id} className="flex items-center justify-between">
-                        <span>
-                          {user.first_name} {user.last_name}
-                        </span>
-                        <Switch
-                          checked={notifications.distributionList.includes(user.id)}
-                          onCheckedChange={() => toggleDistribution(user.id)}
-                        />
-                      </label>
-                    ))}
+                  <div className="space-y-2 rounded-lg border border-gray-200 bg-gray-50 p-3 text-sm">
+                    {distributionListMembers.length === 0 ? (
+                      <p className="text-sm text-gray-500">
+                        Select audit team members or auditee contacts to build the distribution list.
+                      </p>
+                    ) : (
+                      <div className="flex flex-wrap gap-2">
+                        {distributionListMembers.map((member) => (
+                          <Badge key={member.id} variant="secondary" className="bg-white text-gray-700">
+                            {member.first_name} {member.last_name}
+                          </Badge>
+                        ))}
+                      </div>
+                    )}
                   </div>
+                  <p className="text-xs text-gray-500">
+                    Recipients are automatically synced from the selected audit team and auditee contacts.
+                  </p>
                 </div>
                 <div className="space-y-3">
                   <div className="space-y-2">
@@ -1330,6 +1421,18 @@ function AuditCreationContent() {
                 <SummaryTile
                   title="Schedule"
                   value={`${scheduling.startDate || ""} → ${scheduling.endDate || ""}`}
+                />
+                <SummaryTile
+                  title="Audit Team"
+                  value={selectedAuditTeamMembers
+                    .map((member) => `${member.first_name} ${member.last_name}`)
+                    .join(", ")}
+                />
+                <SummaryTile
+                  title="Auditee Contacts"
+                  value={selectedAuditeeContacts
+                    .map((contact) => `${contact.first_name} ${contact.last_name}`)
+                    .join(", ")}
                 />
               </div>
 
