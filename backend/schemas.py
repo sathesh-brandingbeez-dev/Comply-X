@@ -1276,6 +1276,32 @@ class ProjectOut(ProjectBase):
 
 
 # --- Audit Builder ---
+
+
+class AuditWizardDepartmentOption(BaseModel):
+    id: int
+    name: str
+
+    class Config:
+        from_attributes = True
+
+
+class AuditWizardUserOption(BaseModel):
+    id: int
+    username: Optional[str] = None
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    email: Optional[str] = None
+    role: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+
+class AuditWizardOptions(BaseModel):
+    departments: List[AuditWizardDepartmentOption]
+    users: List[AuditWizardUserOption]
+
 class AuditChecklistQuestionBase(BaseModel):
     question_text: str
     question_type: AuditQuestionType

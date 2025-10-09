@@ -49,6 +49,7 @@ import {
   RiskLevel,
   AuditQuestionType,
   DepartmentOption,
+  AuditWizardOptions,
   UserOption,
 } from "@/types/audits"
 
@@ -105,6 +106,13 @@ const DEFAULT_TIMELINE: AuditTimelineEntry[] = [
   { phase: "Reporting", start_date: "", end_date: "", completion: 0 },
 ]
 
+const FALLBACK_DEPARTMENTS: DepartmentOption[] = [
+  { id: 1, name: "Information Security" },
+  { id: 2, name: "Finance" },
+  { id: 3, name: "Operations" },
+  { id: 4, name: "Quality" },
+]
+
 const STEPS = [
   { id: 1, title: "Basic Information", description: "Define audit scope, objectives, and risk" },
   { id: 2, title: "Scheduling & Resources", description: "Plan timeline and assign the audit team" },
@@ -153,6 +161,17 @@ function createQuestion(seed?: Partial<WizardQuestion>): WizardQuestion {
     riskImpact: seed?.riskImpact ?? "medium",
     guidanceNotes: seed?.guidanceNotes ?? "",
   }
+}
+
+function formatUserName(user?: UserOption | null): string {
+  if (!user) return ""
+  const first = (user.first_name ?? "").trim()
+  const last = (user.last_name ?? "").trim()
+  if (first && last) return `${first} ${last}`
+  if (first) return first
+  if (last) return last
+  const fallback = (user.username ?? user.email ?? "").split("@")[0]?.trim()
+  return fallback && fallback.length > 0 ? fallback : `User ${user.id}`
 }
 
 function AuditCreationContent() {
@@ -234,30 +253,47 @@ function AuditCreationContent() {
   }, [searchParams])
 
   useEffect(() => {
+    let active = true
+
     const loadOptions = async () => {
       try {
-        const [departments, users] = await Promise.all([
-          api<DepartmentOption[]>("/api/organization/departments"),
-          api<UserOption[]>("/api/auth/users"),
-        ])
-        setDepartmentOptions(departments)
-        setUserOptions(users)
+        const response = await api<AuditWizardOptions>("/api/audits/options")
+        if (!active) return
+
+        if (response?.departments?.length) {
+          setDepartmentOptions(response.departments)
+        } else {
+          setDepartmentOptions(FALLBACK_DEPARTMENTS)
+        }
+
+        const sanitizedUsers: UserOption[] = (response?.users ?? [])
+          .filter((user): user is UserOption => user != null && typeof user.id === "number")
+          .map((user) => {
+            const firstName = (user.first_name ?? "").trim()
+            const lastName = (user.last_name ?? "").trim()
+
+            if (firstName || lastName) {
+              return { ...user, first_name: firstName, last_name: lastName }
+            }
+
+            const fallbackName = formatUserName(user)
+            return { ...user, first_name: fallbackName, last_name: "" }
+          })
+
+        setUserOptions(sanitizedUsers)
       } catch (error) {
-        setDepartmentOptions([
-          { id: 1, name: "Information Security" },
-          { id: 2, name: "Finance" },
-          { id: 3, name: "Operations" },
-          { id: 4, name: "Quality" },
-        ])
-        setUserOptions([
-          { id: 1, first_name: "Alex", last_name: "Rivera", email: "alex.rivera@example.com" },
-          { id: 2, first_name: "Priya", last_name: "Sharma", email: "priya.sharma@example.com" },
-          { id: 3, first_name: "Liam", last_name: "Nguyen", email: "liam.nguyen@example.com" },
-          { id: 4, first_name: "Sara", last_name: "Lopez", email: "sara.lopez@example.com" },
-        ])
+        if (!active) return
+        console.error("Failed to load audit creation options", error)
+        setDepartmentOptions(FALLBACK_DEPARTMENTS)
+        setUserOptions([])
       }
     }
+
     loadOptions()
+
+    return () => {
+      active = false
+    }
   }, [])
 
   const selectedDepartments = useMemo(
@@ -601,6 +637,8 @@ function AuditCreationContent() {
       })),
     })) as unknown as AuditChecklistSection[]
 
+    const leadAuditor = userOptions.find((user) => user.id === Number(scheduling.leadAuditorId))
+
     const payload: AuditRecord = {
       id: 0,
       title: basicInfo.title,
@@ -635,11 +673,10 @@ function AuditCreationContent() {
       sections: sectionPayloads,
       status: "draft",
       progress: 0,
-      lead_auditor_name: userOptions.find((user) => user.id === Number(scheduling.leadAuditorId))
-        ? `${userOptions.find((user) => user.id === Number(scheduling.leadAuditorId))!.first_name} ${
-            userOptions.find((user) => user.id === Number(scheduling.leadAuditorId))!.last_name
-          }`
-        : undefined,
+      lead_auditor_name: (() => {
+        const name = formatUserName(leadAuditor)
+        return name ? name : undefined
+      })(),
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     }
@@ -965,7 +1002,7 @@ function AuditCreationContent() {
                     <SelectContent>
                       {userOptions.map((user) => (
                         <SelectItem key={user.id} value={String(user.id)}>
-                          {user.first_name} {user.last_name}
+                          {formatUserName(user)}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -993,9 +1030,7 @@ function AuditCreationContent() {
                   <div className="grid max-h-32 gap-2 overflow-y-auto rounded-lg border border-gray-200 p-3 text-sm">
                     {userOptions.map((user) => (
                       <label key={user.id} className="flex items-center justify-between">
-                        <span>
-                          {user.first_name} {user.last_name}
-                        </span>
+                        <span>{formatUserName(user)}</span>
                         <Switch
                           checked={scheduling.auditTeamIds.includes(user.id)}
                           onCheckedChange={() => toggleTeamMember(user.id)}
@@ -1009,9 +1044,7 @@ function AuditCreationContent() {
                   <div className="grid max-h-32 gap-2 overflow-y-auto rounded-lg border border-gray-200 p-3 text-sm">
                     {userOptions.map((user) => (
                       <label key={user.id} className="flex items-center justify-between">
-                        <span>
-                          {user.first_name} {user.last_name}
-                        </span>
+                        <span>{formatUserName(user)}</span>
                         <Switch
                           checked={scheduling.auditeeContacts.includes(user.id)}
                           onCheckedChange={() => toggleAuditeeContact(user.id)}
@@ -1031,7 +1064,7 @@ function AuditCreationContent() {
                     <div className="flex flex-wrap gap-2">
                       {selectedAuditTeamMembers.map((member) => (
                         <Badge key={member.id} variant="secondary">
-                          {member.first_name} {member.last_name}
+                          {formatUserName(member)}
                         </Badge>
                       ))}
                     </div>
@@ -1045,7 +1078,7 @@ function AuditCreationContent() {
                     <div className="flex flex-wrap gap-2">
                       {selectedAuditeeContacts.map((contact) => (
                         <Badge key={contact.id} variant="outline">
-                          {contact.first_name} {contact.last_name}
+                          {formatUserName(contact)}
                         </Badge>
                       ))}
                     </div>
@@ -1364,7 +1397,7 @@ function AuditCreationContent() {
                       <div className="flex flex-wrap gap-2">
                         {distributionListMembers.map((member) => (
                           <Badge key={member.id} variant="secondary" className="bg-white text-gray-700">
-                            {member.first_name} {member.last_name}
+                            {formatUserName(member)}
                           </Badge>
                         ))}
                       </div>
@@ -1424,15 +1457,11 @@ function AuditCreationContent() {
                 />
                 <SummaryTile
                   title="Audit Team"
-                  value={selectedAuditTeamMembers
-                    .map((member) => `${member.first_name} ${member.last_name}`)
-                    .join(", ")}
+                  value={selectedAuditTeamMembers.map((member) => formatUserName(member)).join(", ")}
                 />
                 <SummaryTile
                   title="Auditee Contacts"
-                  value={selectedAuditeeContacts
-                    .map((contact) => `${contact.first_name} ${contact.last_name}`)
-                    .join(", ")}
+                  value={selectedAuditeeContacts.map((contact) => formatUserName(contact)).join(", ")}
                 />
               </div>
 
