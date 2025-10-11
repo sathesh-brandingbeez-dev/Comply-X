@@ -199,12 +199,15 @@ export function RiskCreateForm({ options, loading, onSubmit, onSuggestWeights }:
           </div>
           <div className="space-y-2">
             <Label>Assessment framework</Label>
-            <Select value={framework ?? ''} onValueChange={(value) => setFramework(value || undefined)}>
+             <Select
+              value={framework ?? 'none'}
+              onValueChange={(value) => setFramework(value === 'none' ? undefined : value)}
+            >
               <SelectTrigger>
                 <SelectValue placeholder="Optional" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="">None</SelectItem>
+                <SelectItem value="none">None</SelectItem>
                 <SelectItem value="ISO 31000 Risk Management">ISO 31000 Risk Management</SelectItem>
                 <SelectItem value="COSO Enterprise Risk Management">COSO Enterprise Risk Management</SelectItem>
                 <SelectItem value="NIST Risk Management Framework">NIST Risk Management Framework</SelectItem>
