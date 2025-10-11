@@ -1494,6 +1494,49 @@ class AuditPlanningDashboard(BaseModel):
     ai_recommendations: AuditAIRecommendations
 
 
+AuditPlanTaskStatus = Literal["not_started", "in_progress", "completed"]
+
+
+class AuditPlanMilestone(BaseModel):
+    name: str
+    start_date: date
+    end_date: date
+    status: AuditStatus
+
+
+class AuditPlanTask(BaseModel):
+    name: str
+    owner: str
+    due_date: date
+    status: AuditPlanTaskStatus
+
+
+class AuditPlanResource(BaseModel):
+    role: str
+    name: str
+    allocated_hours: int = 0
+
+
+class AuditPlanDetail(BaseModel):
+    id: int
+    title: str
+    audit_type: AuditType
+    status: AuditStatus
+    risk_level: RiskLevel
+    lead_auditor: str
+    departments: List[str] = Field(default_factory=list)
+    start_date: date
+    end_date: date
+    objectives: List[str] = Field(default_factory=list)
+    scope: str
+    milestones: List[AuditPlanMilestone] = Field(default_factory=list)
+    tasks: List[AuditPlanTask] = Field(default_factory=list)
+    resources: List[AuditPlanResource] = Field(default_factory=list)
+    notes: str
+    progress: int
+    compliance_frameworks: List[str] = Field(default_factory=list)
+
+
 class AuditBasicInfoAIRequest(BaseModel):
     audit_type: AuditType
     departments: List[str]

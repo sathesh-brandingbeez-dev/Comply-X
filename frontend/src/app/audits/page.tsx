@@ -73,6 +73,37 @@ const RISK_COLOR: Record<string, string> = {
 
 type ViewMode = "month" | "week" | "day"
 
+function startOfDay(date: Date) {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate())
+}
+
+function parseDateOnly(value: string | Date) {
+  if (value instanceof Date) {
+    return startOfDay(value)
+  }
+  const [year, month, day] = value.split("-").map((segment) => Number.parseInt(segment, 10))
+  return new Date(year, month - 1, day)
+}
+
+function formatDateKey(date: Date) {
+  const yyyy = date.getFullYear()
+  const mm = String(date.getMonth() + 1).padStart(2, "0")
+  const dd = String(date.getDate()).padStart(2, "0")
+  return `${yyyy}-${mm}-${dd}`
+}
+
+function addDays(date: Date, amount: number) {
+  const base = startOfDay(date)
+  base.setDate(base.getDate() + amount)
+  return base
+}
+
+function startOfWeek(date: Date) {
+  const base = startOfDay(date)
+  const diff = base.getDay()
+  return addDays(base, -diff)
+}
+
 type AuditPlanningState = {
   data: AuditPlanningDashboard | null
   loading: boolean
@@ -101,8 +132,8 @@ const FALLBACK_DASHBOARD: AuditPlanningDashboard = {
       id: 1,
       audit_id: 1,
       title: "ISO 27001 Surveillance Audit",
-      start_date: new Date().toISOString().split("T")[0],
-      end_date: new Date(Date.now() + 4 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
+      start_date: formatDateKey(startOfDay(new Date())),
+      end_date: formatDateKey(addDays(new Date(), 4)),
       status: "scheduled",
       audit_type: "it_security_audit",
       lead_auditor: "Alex Rivera",
@@ -114,8 +145,8 @@ const FALLBACK_DASHBOARD: AuditPlanningDashboard = {
       id: 2,
       audit_id: 2,
       title: "Quarterly Internal Controls Review",
-      start_date: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
-      end_date: new Date(Date.now() + 9 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
+      start_date: formatDateKey(addDays(new Date(), 7)),
+      end_date: formatDateKey(addDays(new Date(), 9)),
       status: "in_progress",
       audit_type: "internal_audit",
       lead_auditor: "Priya Sharma",
@@ -137,8 +168,8 @@ const FALLBACK_DASHBOARD: AuditPlanningDashboard = {
       title: "ISO 27001 Surveillance Audit",
       audit_type: "it_security_audit",
       departments: ["Information Security", "Infrastructure"],
-      start_date: new Date().toISOString().split("T")[0],
-      end_date: new Date(Date.now() + 4 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
+      start_date: formatDateKey(startOfDay(new Date())),
+      end_date: formatDateKey(addDays(new Date(), 4)),
       status: "scheduled",
       progress: 35,
       lead_auditor: "Alex Rivera",
@@ -149,8 +180,8 @@ const FALLBACK_DASHBOARD: AuditPlanningDashboard = {
       title: "Quarterly Internal Controls Review",
       audit_type: "internal_audit",
       departments: ["Finance", "Procurement"],
-      start_date: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
-      end_date: new Date(Date.now() + 9 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
+      start_date: formatDateKey(addDays(new Date(), 7)),
+      end_date: formatDateKey(addDays(new Date(), 9)),
       status: "in_progress",
       progress: 62,
       lead_auditor: "Priya Sharma",
@@ -219,16 +250,16 @@ function mapViewToLabel(view: ViewMode) {
 function createEventsIndex(events: AuditCalendarEvent[]) {
   const map = new Map<string, AuditCalendarEvent[]>()
   events.forEach((event) => {
-    const start = new Date(event.start_date)
-    const end = new Date(event.end_date)
-    const cursor = new Date(start)
+    const start = parseDateOnly(event.start_date)
+    const end = parseDateOnly(event.end_date)
+    let cursor = start
     while (cursor <= end) {
-      const dateKey = cursor.toISOString().split("T")[0]
-      if (!map.has(dateKey)) {
-        map.set(dateKey, [])
+      const key = formatDateKey(cursor)
+      if (!map.has(key)) {
+        map.set(key, [])
       }
-      map.get(dateKey)!.push(event)
-      cursor.setDate(cursor.getDate() + 1)
+      map.get(key)!.push(event)
+      cursor = addDays(cursor, 1)
     }
   })
   return map
@@ -256,7 +287,7 @@ export default function AuditPlanningPage() {
   const [searchTerm, setSearchTerm] = useState("")
   const debouncedSearch = useDebounced(searchTerm)
   const [departmentOptions, setDepartmentOptions] = useState<DepartmentOption[]>([])
-  const [activeDate, setActiveDate] = useState(() => new Date())
+  const [activeDate, setActiveDate] = useState(() => startOfDay(new Date()))
 
   useEffect(() => {
     const loadDepartments = async () => {
@@ -320,32 +351,25 @@ export default function AuditPlanningPage() {
   }, [activeDate])
 
   const weekDates = useMemo(() => {
-    const start = new Date(activeDate)
-    start.setDate(start.getDate() - start.getDay())
-    return Array.from({ length: 7 }, (_, index) => {
-      const date = new Date(start)
-      date.setDate(start.getDate() + index)
-      return date
-    })
+    const start = startOfWeek(activeDate)
+    return Array.from({ length: 7 }, (_, index) => addDays(start, index))
   }, [activeDate])
 
   const dayEvents = useMemo(() => {
-    const key = activeDate.toISOString().split("T")[0]
+    const key = formatDateKey(activeDate)
     return eventsIndex.get(key) ?? []
   }, [activeDate, eventsIndex])
 
   useEffect(() => {
     setActiveDate((current) => {
-      const next = new Date(current)
+      const base = startOfDay(current)
       if (viewMode === "month") {
-        return new Date(next.getFullYear(), next.getMonth(), 1)
+        return new Date(base.getFullYear(), base.getMonth(), 1)
       }
       if (viewMode === "week") {
-        const start = new Date(next)
-        start.setDate(start.getDate() - start.getDay())
-        return start
+        return startOfWeek(base)
       }
-      return next
+      return base
     })
   }, [viewMode])
 
@@ -354,13 +378,14 @@ export default function AuditPlanningPage() {
   const changePeriod = (direction: "next" | "prev") => {
     setActiveDate((current) => {
       const delta = direction === "next" ? 1 : -1
+      const base = startOfDay(current)
       if (viewMode === "month") {
-        return new Date(current.getFullYear(), current.getMonth() + delta, 1)
+        return new Date(base.getFullYear(), base.getMonth() + delta, 1)
       }
       if (viewMode === "week") {
-        return new Date(current.getFullYear(), current.getMonth(), current.getDate() + delta * 7)
+        return addDays(startOfWeek(base), delta * 7)
       }
-      return new Date(current.getFullYear(), current.getMonth(), current.getDate() + delta)
+      return addDays(base, delta)
     })
   }
 
@@ -529,7 +554,7 @@ export default function AuditPlanningPage() {
                             />
                           )
                         }
-                        const key = day.toISOString().split("T")[0]
+                        const key = formatDateKey(day)
                         const events = eventsIndex.get(key) ?? []
                         return (
                           <div
@@ -554,9 +579,9 @@ export default function AuditPlanningPage() {
                                     <div className="flex items-center gap-1 text-[10px] text-gray-500">
                                       <Clock className="h-3 w-3" />
                                       <span>
-                                        {new Date(event.start_date).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
+                                        {parseDateOnly(event.start_date).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
                                         {event.end_date !== event.start_date &&
-                                          ` - ${new Date(event.end_date).toLocaleDateString(undefined, { month: "short", day: "numeric" })}`}
+                                          ` - ${parseDateOnly(event.end_date).toLocaleDateString(undefined, { month: "short", day: "numeric" })}`}
                                       </span>
                                     </div>
                                   </div>
@@ -590,7 +615,7 @@ export default function AuditPlanningPage() {
                   {viewMode === "week" && (
                     <div className="grid min-h-[240px] grid-cols-7 gap-2">
                       {weekDates.map((day) => {
-                        const key = day.toISOString().split("T")[0]
+                        const key = formatDateKey(day)
                         const events = eventsIndex.get(key) ?? []
                         return (
                           <div key={key} className="flex flex-col gap-2 rounded-lg border border-gray-200 bg-white p-3">
@@ -636,9 +661,9 @@ export default function AuditPlanningPage() {
                                 <div>
                                   <p className="text-sm font-semibold text-gray-800">{event.title}</p>
                                   <p className="text-[11px] text-gray-500">
-                                    {new Date(event.start_date).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
+                                    {parseDateOnly(event.start_date).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
                                     {event.end_date !== event.start_date &&
-                                      ` – ${new Date(event.end_date).toLocaleDateString(undefined, { month: "short", day: "numeric" })}`}
+                                      ` – ${parseDateOnly(event.end_date).toLocaleDateString(undefined, { month: "short", day: "numeric" })}`}
                                   </p>
                                 </div>
                                 <div className="flex flex-col items-end gap-1 text-[10px] text-gray-500">

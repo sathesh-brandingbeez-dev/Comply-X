@@ -46,6 +46,28 @@ const RISK_COLOR: Record<RiskLevel, string> = {
 
 type TaskStatus = "not_started" | "in_progress" | "completed"
 
+function startOfDay(date: Date) {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate())
+}
+
+function addDaysToDate(date: Date, amount: number) {
+  const base = startOfDay(date)
+  base.setDate(base.getDate() + amount)
+  return base
+}
+
+function formatDateKey(date: Date) {
+  const yyyy = date.getFullYear()
+  const mm = String(date.getMonth() + 1).padStart(2, "0")
+  const dd = String(date.getDate()).padStart(2, "0")
+  return `${yyyy}-${mm}-${dd}`
+}
+
+function parseDateOnly(value: string) {
+  const [year, month, day] = value.split("-").map((segment) => Number.parseInt(segment, 10))
+  return new Date(year, month - 1, day)
+}
+
 type AuditPlanMilestone = {
   name: string
   start_date: string
@@ -92,8 +114,8 @@ type PlanState = {
   error: string | null
 }
 
-const today = new Date()
-const addDays = (days: number) => new Date(today.getTime() + days * 24 * 60 * 60 * 1000).toISOString().split("T")[0]
+const today = startOfDay(new Date())
+const addDays = (days: number) => formatDateKey(addDaysToDate(today, days))
 
 const FALLBACK_PLANS: Record<number, AuditPlanDetail> = {
   1: {
@@ -295,13 +317,13 @@ export default function AuditPlanDetailPage() {
                       <div>
                         <p className="text-xs text-gray-500">Start Date</p>
                         <p className="text-base font-semibold text-gray-800">
-                          {new Date(plan.start_date).toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" })}
+                          {parseDateOnly(plan.start_date).toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" })}
                         </p>
                       </div>
                       <div>
                         <p className="text-xs text-gray-500">End Date</p>
                         <p className="text-base font-semibold text-gray-800">
-                          {new Date(plan.end_date).toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" })}
+                          {parseDateOnly(plan.end_date).toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" })}
                         </p>
                       </div>
                       <div>
@@ -375,9 +397,9 @@ export default function AuditPlanDetailPage() {
                           <div className="mt-1 flex items-center gap-2 text-xs text-gray-500">
                             <Clock className="h-3.5 w-3.5" />
                             <span>
-                              {new Date(milestone.start_date).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
+                              {parseDateOnly(milestone.start_date).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
                               {" – "}
-                              {new Date(milestone.end_date).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
+                              {parseDateOnly(milestone.end_date).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
                             </span>
                           </div>
                         </div>
@@ -433,7 +455,7 @@ export default function AuditPlanDetailPage() {
                           <span className="font-medium text-gray-600">Owner:</span> {task.owner}
                           <span className="mx-2">•</span>
                           <span>
-                            Due {new Date(task.due_date).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
+                            Due {parseDateOnly(task.due_date).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
                           </span>
                         </div>
                       </div>
