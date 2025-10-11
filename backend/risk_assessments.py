@@ -411,6 +411,47 @@ def list_risk_assessments(
     return [_serialise_list_item(assessment) for assessment in assessments]
 
 
+@router.get("/dashboard", response_model=RiskAssessmentDashboardResponse)
+def risk_dashboard(
+    db: Session = Depends(get_db),
+    _: User = Depends(require_roles(*READ_ROLES)),
+    assessment_id: Optional[int] = Query(None),
+    risk_type: Optional[str] = Query(None, description="overall, political, economic, compliance, operational, etc."),
+    data_source: Optional[str] = Query(None, description="internal, external, combined"),
+) -> RiskAssessmentDashboardResponse:
+    query = db.query(CountryRiskAssessment)
+    if assessment_id:
+        query = query.filter(CountryRiskAssessment.id == assessment_id)
+    assessment = (
+        query.order_by(CountryRiskAssessment.updated_at.desc()).first()
+    )
+    if not assessment:
+        raise HTTPException(status_code=404, detail="No risk assessments available")
+
+    map_entries = _build_map_entries(assessment, risk_type=risk_type, data_source=data_source)
+    summary = _calculate_summary(assessment)
+    country_panels = [_serialise_country(country) for country in assessment.countries]
+
+    ai_alerts: list[str] = []
+    for country in assessment.countries:
+        if country.risk_level in {RiskLevel.HIGH, RiskLevel.CRITICAL}:
+            ai_alerts.append(
+                f"{country.country_name} flagged as {country.risk_level.value.title()} risk; ensure mitigation plan review."
+            )
+        if country.trend == RiskTrend.DETERIORATING:
+            ai_alerts.append(
+                f"{country.country_name} risk trend deteriorating. Investigate new incidents or regulatory changes."
+            )
+
+    return RiskAssessmentDashboardResponse(
+        map_countries=map_entries,
+        summary=summary,
+        country_panels=country_panels,
+        ai_alerts=ai_alerts[:6],
+        last_refreshed=datetime.utcnow(),
+    )
+
+
 @router.get("/{assessment_id}", response_model=RiskAssessmentDetail)
 def get_risk_assessment(
     assessment_id: int,
@@ -581,44 +622,3 @@ def upsert_assessment_country(
     db.commit()
     db.refresh(country_entry)
     return _serialise_country(country_entry)
-
-
-@router.get("/dashboard", response_model=RiskAssessmentDashboardResponse)
-def risk_dashboard(
-    db: Session = Depends(get_db),
-    _: User = Depends(require_roles(*READ_ROLES)),
-    assessment_id: Optional[int] = Query(None),
-    risk_type: Optional[str] = Query(None, description="overall, political, economic, compliance, operational, etc."),
-    data_source: Optional[str] = Query(None, description="internal, external, combined"),
-) -> RiskAssessmentDashboardResponse:
-    query = db.query(CountryRiskAssessment)
-    if assessment_id:
-        query = query.filter(CountryRiskAssessment.id == assessment_id)
-    assessment = (
-        query.order_by(CountryRiskAssessment.updated_at.desc()).first()
-    )
-    if not assessment:
-        raise HTTPException(status_code=404, detail="No risk assessments available")
-
-    map_entries = _build_map_entries(assessment, risk_type=risk_type, data_source=data_source)
-    summary = _calculate_summary(assessment)
-    country_panels = [_serialise_country(country) for country in assessment.countries]
-
-    ai_alerts: list[str] = []
-    for country in assessment.countries:
-        if country.risk_level in {RiskLevel.HIGH, RiskLevel.CRITICAL}:
-            ai_alerts.append(
-                f"{country.country_name} flagged as {country.risk_level.value.title()} risk; ensure mitigation plan review."
-            )
-        if country.trend == RiskTrend.DETERIORATING:
-            ai_alerts.append(
-                f"{country.country_name} risk trend deteriorating. Investigate new incidents or regulatory changes."
-            )
-
-    return RiskAssessmentDashboardResponse(
-        map_countries=map_entries,
-        summary=summary,
-        country_panels=country_panels,
-        ai_alerts=ai_alerts[:6],
-        last_refreshed=datetime.utcnow(),
-    )
