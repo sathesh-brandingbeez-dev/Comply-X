@@ -23,6 +23,7 @@ from models import (
     RiskUpdateSource,
     User,
 )
+from data.default_countries import DEFAULT_COUNTRY_OPTIONS
 from schemas import (
     RiskAssessmentCategoryWeight,
     RiskAssessmentCountryCategoryScore,
@@ -278,9 +279,24 @@ def get_risk_assessment_options(
         .order_by(User.first_name.asc(), User.last_name.asc())
         .all()
     )
-    country_options = [
-        RiskAssessmentCountryOption(code=country.code, name=country.name) for country in countries
-    ]
+    # When the customer has not yet loaded their own countries we fall back to a
+    # comprehensive ISO list so that the risk workflow still functions out of the box.
+    merged_countries: dict[str, RiskAssessmentCountryOption] = {}
+
+    for country in countries:
+        if not country.code or not country.name:
+            continue
+        merged_countries[country.code.upper()] = RiskAssessmentCountryOption(
+            code=country.code.upper(),
+            name=country.name,
+        )
+
+    for entry in DEFAULT_COUNTRY_OPTIONS:
+        code = entry["code"].upper()
+        if code not in merged_countries:
+            merged_countries[code] = RiskAssessmentCountryOption(code=code, name=entry["name"])
+
+    country_options = sorted(merged_countries.values(), key=lambda option: option.name)
     user_options = [
         RiskAssessmentUserOption(
             id=user.id,
