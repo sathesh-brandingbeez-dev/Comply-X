@@ -69,6 +69,82 @@ class InvestigationActivityType(str, enum.Enum):
     RESEARCH = "Research"
     OTHER = "Other"
 
+class CorrectiveActionType(str, enum.Enum):
+    IMMEDIATE = "Immediate Action"
+    SHORT_TERM = "Short-term Corrective Action"
+    LONG_TERM = "Long-term Corrective Action"
+    PREVENTIVE = "Preventive Action"
+    IMPROVEMENT = "Improvement Action"
+
+
+class CorrectiveActionSource(str, enum.Enum):
+    INCIDENT_REPORT = "Incident Report"
+    AUDIT_FINDING = "Audit Finding"
+    RISK_ASSESSMENT = "Risk Assessment"
+    CUSTOMER_COMPLAINT = "Customer Complaint"
+    MANAGEMENT_REVIEW = "Management Review"
+    FMEA = "FMEA"
+    OTHER = "Other"
+
+
+class CorrectiveActionPriority(str, enum.Enum):
+    LOW = "Low"
+    MEDIUM = "Medium"
+    HIGH = "High"
+    CRITICAL = "Critical"
+
+
+class CorrectiveActionImpact(str, enum.Enum):
+    LOW = "Low"
+    MEDIUM = "Medium"
+    HIGH = "High"
+    CRITICAL = "Critical"
+
+
+class CorrectiveActionUrgency(str, enum.Enum):
+    LOW = "Low"
+    MEDIUM = "Medium"
+    HIGH = "High"
+    CRITICAL = "Critical"
+
+
+class CorrectiveActionStatus(str, enum.Enum):
+    OPEN = "Open"
+    IN_PROGRESS = "In Progress"
+    COMPLETED = "Completed"
+    CLOSED = "Closed"
+    CANCELLED = "Cancelled"
+
+
+class CorrectiveActionStepStatus(str, enum.Enum):
+    NOT_STARTED = "Not Started"
+    IN_PROGRESS = "In Progress"
+    COMPLETED = "Completed"
+    DELAYED = "Delayed"
+
+
+class CorrectiveActionUpdateType(str, enum.Enum):
+    PROGRESS_UPDATE = "Progress Update"
+    ISSUE_REPORT = "Issue Report"
+    RESOURCE_CHANGE = "Resource Change"
+    TIMELINE_CHANGE = "Timeline Change"
+    ESCALATION = "Escalation"
+    REVIEW = "Review"
+    COMMENT = "Comment"
+
+
+class CorrectiveActionEvaluationMethod(str, enum.Enum):
+    METRICS_REVIEW = "Metrics review"
+    AUDIT = "Audit"
+    SURVEY = "Survey"
+    OTHER = "Other"
+
+
+class CorrectiveActionEffectivenessRating(str, enum.Enum):
+    EFFECTIVE = "Effective"
+    PARTIALLY_EFFECTIVE = "Partially Effective"
+    NOT_EFFECTIVE = "Not Effective"
+
 # Organizational Hierarchy Models
 
 class Group(Base):
@@ -1173,6 +1249,133 @@ class IncidentRootCauseFactor(Base):
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
     investigation = relationship("IncidentInvestigation", back_populates="root_cause_factors")
+
+
+class CorrectiveAction(Base):
+    __tablename__ = "corrective_actions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    action_code = Column(String(32), nullable=False, unique=True, index=True)
+
+    title = Column(String(200), nullable=False)
+    action_type = Column(Enum(CorrectiveActionType), nullable=False)
+    source_reference = Column(Enum(CorrectiveActionSource), nullable=False)
+    reference_id = Column(String(200), nullable=True)
+
+    department_ids = Column(JSON, nullable=False, default=list)
+    priority = Column(Enum(CorrectiveActionPriority), nullable=False, default=CorrectiveActionPriority.MEDIUM)
+    impact = Column(Enum(CorrectiveActionImpact), nullable=False, default=CorrectiveActionImpact.MEDIUM)
+    urgency = Column(Enum(CorrectiveActionUrgency), nullable=False, default=CorrectiveActionUrgency.MEDIUM)
+
+    problem_statement = Column(Text, nullable=False)
+    root_cause = Column(Text, nullable=False)
+    contributing_factors = Column(Text, nullable=True)
+    impact_assessment = Column(Text, nullable=False)
+    current_controls = Column(Text, nullable=True)
+    evidence_files = Column(JSON, nullable=True, default=list)
+
+    corrective_action_description = Column(Text, nullable=False)
+
+    overall_due_date = Column(Date, nullable=False)
+    action_owner_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    review_team_ids = Column(JSON, nullable=True, default=list)
+    budget_required = Column(Float, nullable=True)
+    approval_required = Column(Boolean, default=False, nullable=False)
+    approver_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+
+    status = Column(Enum(CorrectiveActionStatus), nullable=False, default=CorrectiveActionStatus.OPEN)
+    progress_percent = Column(Float, nullable=False, default=0.0)
+
+    evaluation_due_date = Column(Date, nullable=True)
+    evaluation_method = Column(Enum(CorrectiveActionEvaluationMethod), nullable=True)
+    effectiveness_rating = Column(Enum(CorrectiveActionEffectivenessRating), nullable=True)
+    evaluation_comments = Column(Text, nullable=True)
+    further_actions_required = Column(Boolean, nullable=True)
+    follow_up_actions = Column(Text, nullable=True)
+
+    ai_effectiveness_score = Column(Float, nullable=True)
+    ai_risk_score = Column(Float, nullable=True)
+    ai_recommendations = Column(JSON, nullable=True, default=dict)
+
+    created_by_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    last_status_change = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    owner = relationship("User", foreign_keys=[action_owner_id], backref="owned_corrective_actions")
+    approver = relationship("User", foreign_keys=[approver_id], backref="approved_corrective_actions")
+    created_by = relationship("User", foreign_keys=[created_by_id], backref="created_corrective_actions")
+
+    steps = relationship(
+        "CorrectiveActionStep",
+        back_populates="action",
+        cascade="all, delete-orphan",
+        order_by="CorrectiveActionStep.order_index",
+    )
+    updates = relationship(
+        "CorrectiveActionUpdate",
+        back_populates="action",
+        cascade="all, delete-orphan",
+        order_by="CorrectiveActionUpdate.created_at",
+    )
+    metrics = relationship(
+        "CorrectiveActionMetric",
+        back_populates="action",
+        cascade="all, delete-orphan",
+    )
+
+
+class CorrectiveActionStep(Base):
+    __tablename__ = "corrective_action_steps"
+
+    id = Column(Integer, primary_key=True, index=True)
+    action_id = Column(Integer, ForeignKey("corrective_actions.id", ondelete="CASCADE"), nullable=False, index=True)
+    order_index = Column(Integer, nullable=False, default=0)
+    description = Column(Text, nullable=False)
+    responsible_person_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    due_date = Column(Date, nullable=True)
+    resources_required = Column(Text, nullable=True)
+    success_criteria = Column(Text, nullable=True)
+    status = Column(Enum(CorrectiveActionStepStatus), nullable=False, default=CorrectiveActionStepStatus.NOT_STARTED)
+    progress_notes = Column(Text, nullable=True)
+    issues_obstacles = Column(Text, nullable=True)
+    evidence = Column(JSON, nullable=True, default=list)
+    completion_date = Column(Date, nullable=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    action = relationship("CorrectiveAction", back_populates="steps")
+    responsible_person = relationship("User", foreign_keys=[responsible_person_id], backref="corrective_action_steps")
+
+
+class CorrectiveActionUpdate(Base):
+    __tablename__ = "corrective_action_updates"
+
+    id = Column(Integer, primary_key=True, index=True)
+    action_id = Column(Integer, ForeignKey("corrective_actions.id", ondelete="CASCADE"), nullable=False, index=True)
+    update_type = Column(Enum(CorrectiveActionUpdateType), nullable=False)
+    description = Column(Text, nullable=False)
+    attachments = Column(JSON, nullable=True, default=list)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_by_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+
+    action = relationship("CorrectiveAction", back_populates="updates")
+    created_by = relationship("User", foreign_keys=[created_by_id], backref="corrective_action_updates")
+
+
+class CorrectiveActionMetric(Base):
+    __tablename__ = "corrective_action_metrics"
+
+    id = Column(Integer, primary_key=True, index=True)
+    action_id = Column(Integer, ForeignKey("corrective_actions.id", ondelete="CASCADE"), nullable=False, index=True)
+    metric_name = Column(String(200), nullable=False)
+    target_value = Column(String(100), nullable=True)
+    actual_value = Column(String(100), nullable=True)
+    measurement_method = Column(String(100), nullable=True)
+    measurement_date = Column(Date, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    action = relationship("CorrectiveAction", back_populates="metrics")
 
 
 # --- Calendar & Project Timeline Models ---
