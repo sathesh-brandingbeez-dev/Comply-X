@@ -16,6 +16,12 @@ import {
 } from '@/types/risk'
 import { Badge } from '@/components/ui/badge'
 import { Sparkles } from 'lucide-react'
+import sharedCountryCatalogue from '@shared/data/default_countries.json'
+
+const FALLBACK_COUNTRIES = (sharedCountryCatalogue as { code: string; name: string }[]).map((entry) => ({
+  code: entry.code.toUpperCase(),
+  name: entry.name,
+}))
 
 interface RiskCreateFormProps {
   options: RiskAssessmentOptionsResponse
@@ -69,9 +75,10 @@ export function RiskCreateForm({ options, loading, onSubmit, onSuggestWeights }:
   const [weightGuidance, setWeightGuidance] = useState<string | undefined>()
 
   const filteredCountries = useMemo(() => {
+    const baseCountries = options.countries.length ? options.countries : FALLBACK_COUNTRIES
     const searchTerm = countrySearch.trim().toLowerCase()
-    if (!searchTerm) return options.countries
-    return options.countries.filter((country) => {
+    if (!searchTerm) return baseCountries
+    return baseCountries.filter((country) => {
       const name = country.name?.toLowerCase() ?? ''
       const code = country.code?.toLowerCase() ?? ''
       return name.includes(searchTerm) || code.includes(searchTerm)
@@ -97,10 +104,11 @@ export function RiskCreateForm({ options, loading, onSubmit, onSuggestWeights }:
   }, [periodStart, periodEnd])
 
   const toggleCountry = (code: string) => {
+    const normalised = code.toUpperCase()
     setSelectedCountries((prev) =>
-      prev.includes(code)
-        ? prev.filter((countryCode) => countryCode !== code)
-        : [...prev, code]
+      prev.includes(normalised)
+        ? prev.filter((countryCode) => countryCode !== normalised)
+        : [...prev, normalised]
     )
   }
 
