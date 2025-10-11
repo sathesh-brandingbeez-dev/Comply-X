@@ -11,6 +11,11 @@ from models import (
     QuestionnaireStatus,
     QuestionnaireType,
     RiskLevel,
+    RiskTrend,
+    RiskConfidence,
+    RiskUpdateSource,
+    RiskAssessmentType,
+    RiskScoringScale,
     FMEAType,
     FMEAStatus,
     ActionStatus,
@@ -1606,3 +1611,225 @@ class AuditReviewAIResponse(BaseModel):
     optimisation_opportunities: List[str]
     predicted_success_probability: float
     launch_timing_recommendation: str
+
+
+# ===== Risk Assessment Schemas =====
+
+
+class RiskAssessmentScaleEntry(BaseModel):
+    label: str
+    description: str
+
+
+class RiskAssessmentCategoryWeight(BaseModel):
+    category_key: str
+    display_name: str
+    weight: int = Field(ge=0, le=100)
+    order_index: int = 0
+    baseline_guidance: Optional[str] = None
+
+
+class RiskAssessmentCountryCategoryScore(BaseModel):
+    id: int
+    category_key: str
+    category_name: str
+    score: Optional[float] = None
+    trend: Optional[RiskTrend] = None
+    confidence: Optional[RiskConfidence] = None
+    evidence: Optional[str] = None
+    last_updated: Optional[datetime] = None
+    update_source: Optional[RiskUpdateSource] = None
+
+
+class RiskAssessmentCountryDetail(BaseModel):
+    id: int
+    country_code: str
+    country_name: str
+    overall_score: Optional[float] = None
+    risk_level: Optional[RiskLevel] = None
+    trend: Optional[RiskTrend] = None
+    confidence: Optional[RiskConfidence] = None
+    last_updated: Optional[datetime] = None
+    update_source: Optional[RiskUpdateSource] = None
+    evidence: Optional[str] = None
+    comments: Optional[str] = None
+    next_review_date: Optional[date] = None
+    ai_generated: bool = False
+    category_scores: List[RiskAssessmentCountryCategoryScore] = Field(default_factory=list)
+
+
+class RiskAssessmentBase(BaseModel):
+    title: str
+    assessment_type: RiskAssessmentType
+    assessment_framework: Optional[str] = None
+    period_start: date
+    period_end: date
+    update_frequency: str
+    scoring_scale: RiskScoringScale = RiskScoringScale.ONE_TO_HUNDRED
+    custom_scoring_scale: Optional[str] = None
+    impact_scale: List[RiskAssessmentScaleEntry] = Field(default_factory=list)
+    probability_scale: List[RiskAssessmentScaleEntry] = Field(default_factory=list)
+    categories: List[RiskAssessmentCategoryWeight] = Field(default_factory=list)
+    ai_configuration: Optional[Dict[str, Any]] = None
+
+
+class RiskAssessmentCreate(RiskAssessmentBase):
+    country_codes: List[str]
+    assigned_assessor_id: int
+    review_team_ids: List[int] = Field(default_factory=list)
+
+
+class RiskAssessmentUpdate(RiskAssessmentBase):
+    review_team_ids: List[int] = Field(default_factory=list)
+
+
+class RiskAssessmentListItem(BaseModel):
+    id: int
+    title: str
+    assessment_type: RiskAssessmentType
+    assessment_framework: Optional[str] = None
+    status: str
+    period_start: date
+    period_end: date
+    update_frequency: str
+    country_count: int
+    high_risk_countries: int
+    updated_at: datetime
+
+
+class RiskAssessmentDetail(RiskAssessmentListItem):
+    scoring_scale: RiskScoringScale
+    custom_scoring_scale: Optional[str] = None
+    impact_scale: List[RiskAssessmentScaleEntry]
+    probability_scale: List[RiskAssessmentScaleEntry]
+    categories: List[RiskAssessmentCategoryWeight]
+    assigned_assessor_id: int
+    review_team_ids: List[int] = Field(default_factory=list)
+    ai_configuration: Dict[str, Any] = Field(default_factory=dict)
+    countries: List[RiskAssessmentCountryDetail] = Field(default_factory=list)
+
+
+class RiskAssessmentSummaryCards(BaseModel):
+    total_countries_assessed: int
+    high_risk_countries: int
+    recent_risk_changes: int
+    next_assessment_due: Optional[date]
+
+
+class RiskAssessmentMapCountry(BaseModel):
+    country_code: str
+    country_name: str
+    overall_score: Optional[float] = None
+    risk_level: Optional[RiskLevel] = None
+    trend: Optional[RiskTrend] = None
+    confidence: Optional[RiskConfidence] = None
+    update_source: Optional[RiskUpdateSource] = None
+
+
+class RiskAssessmentDashboardResponse(BaseModel):
+    map_countries: List[RiskAssessmentMapCountry]
+    summary: RiskAssessmentSummaryCards
+    country_panels: List[RiskAssessmentCountryDetail] = Field(default_factory=list)
+    ai_alerts: List[str] = Field(default_factory=list)
+    last_refreshed: datetime
+
+
+class RiskAssessmentCountryCategoryInput(BaseModel):
+    category_key: str
+    category_name: str
+    score: Optional[float] = None
+    trend: Optional[RiskTrend] = None
+    confidence: Optional[RiskConfidence] = None
+    evidence: Optional[str] = None
+    update_source: Optional[RiskUpdateSource] = None
+
+
+class RiskAssessmentCountryUpsert(BaseModel):
+    country_code: str
+    country_name: Optional[str] = None
+    overall_score: Optional[float] = None
+    risk_level: Optional[RiskLevel] = None
+    trend: Optional[RiskTrend] = None
+    confidence: Optional[RiskConfidence] = None
+    update_source: Optional[RiskUpdateSource] = None
+    evidence: Optional[str] = None
+    comments: Optional[str] = None
+    next_review_date: Optional[date] = None
+    ai_generated: bool = False
+    category_scores: List[RiskAssessmentCountryCategoryInput] = Field(default_factory=list)
+
+
+class RiskAssessmentCountryResponse(RiskAssessmentCountryDetail):
+    pass
+
+
+class RiskAssessmentCountryListResponse(BaseModel):
+    countries: List[RiskAssessmentCountryDetail]
+
+
+class RiskAssessmentCountryOption(BaseModel):
+    code: str
+    name: str
+
+
+class RiskAssessmentUserOption(BaseModel):
+    id: int
+    name: str
+    role: str
+    department: Optional[str] = None
+
+
+class RiskAssessmentOptionsResponse(BaseModel):
+    countries: List[RiskAssessmentCountryOption]
+    users: List[RiskAssessmentUserOption]
+    defaults: Dict[str, Any] = Field(default_factory=dict)
+
+
+class RiskAIScoringCategory(BaseModel):
+    category_key: str
+    category_name: str
+    score: float
+    weight: Optional[int] = None
+    trend: RiskTrend
+    confidence: RiskConfidence
+
+
+class RiskAIScoreCountryRequest(BaseModel):
+    country_name: str
+    categories: List[RiskAIScoringCategory]
+    recent_events: List[str] = Field(default_factory=list)
+    macro_indicators: Dict[str, float] = Field(default_factory=dict)
+
+
+class RiskAIScoreCountryResponse(BaseModel):
+    overall_score: float
+    risk_level: RiskLevel
+    predicted_trend: RiskTrend
+    confidence: RiskConfidence
+    insights: List[str] = Field(default_factory=list)
+    alerts: List[str] = Field(default_factory=list)
+
+
+class RiskAITrendForecastRequest(BaseModel):
+    country_name: str
+    historical_scores: List[float] = Field(default_factory=list)
+    recent_events: List[str] = Field(default_factory=list)
+
+
+class RiskAITrendForecastResponse(BaseModel):
+    projected_score: float
+    projected_level: RiskLevel
+    predicted_trend: RiskTrend
+    narrative: str
+    alerts: List[str] = Field(default_factory=list)
+
+
+class RiskAIWeightSuggestionRequest(BaseModel):
+    assessment_type: RiskAssessmentType
+    categories: List[str]
+    industry: Optional[str] = None
+
+
+class RiskAIWeightSuggestionResponse(BaseModel):
+    weights: List[RiskAssessmentCategoryWeight]
+    guidance: List[str]

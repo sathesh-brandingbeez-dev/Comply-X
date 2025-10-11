@@ -4,10 +4,10 @@ import { useAuth } from '@/contexts/auth-context'
 import { Button } from '@/components/ui/button'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Separator } from '@/components/ui/separator'
-import { 
-  FileText, 
-  ClipboardCheck, 
-  Users, 
+import {
+  FileText,
+  ClipboardCheck,
+  Users,
   AlertTriangle,
   Calendar,
   Settings,
@@ -17,10 +17,8 @@ import {
   BarChart3,
   BookOpen,
   Activity,
-  MessageSquare
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { useState, useEffect } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
 
 interface SidebarItem {
@@ -30,6 +28,7 @@ interface SidebarItem {
   color: string
   adminOnly?: boolean
   badge?: string
+  comingSoon?: boolean
 }
 
 interface DashboardSidebarProps {
@@ -44,15 +43,6 @@ export function DashboardSidebar({ className, isOpen = false, onClose }: Dashboa
   const router = useRouter()
 
   if (!user) return null
-
-  // Get the active item based on current pathname
-  const getActiveItem = () => {
-    if (pathname === '/dashboard') return 'dashboard'
-    if (pathname === '/documents') return 'documents'
-    if (pathname === '/questionnaires') return 'questionnaires'
-    if (pathname === '/settings') return 'settings'
-    return 'dashboard' // fallback
-  }
 
   const getRoleColor = (role: string) => {
     switch (role) {
@@ -106,7 +96,8 @@ export function DashboardSidebar({ className, isOpen = false, onClose }: Dashboa
       title: "Incident Reporting",
       icon: Activity,
       href: "/incidents",
-      color: "text-red-600"
+      color: "text-red-600",
+      comingSoon: true
     },
     {
       title: "Calendar",
@@ -118,14 +109,16 @@ export function DashboardSidebar({ className, isOpen = false, onClose }: Dashboa
       title: "Corrective Actions",
       icon: BookOpen,
       href: "/corrective-actions",
-      color: "text-teal-600"
+      color: "text-teal-600",
+      comingSoon: true
     },
     {
       title: "User Management",
       icon: Users,
       href: "/users",
       color: "text-cyan-600",
-      adminOnly: true
+      adminOnly: true,
+      comingSoon: true
     },
     // {
     //   title: "Settings",
@@ -135,25 +128,17 @@ export function DashboardSidebar({ className, isOpen = false, onClose }: Dashboa
     // }
   ]
 
-  const visibleItems = sidebarItems.filter(item => 
+  const visibleItems = sidebarItems.filter((item) =>
     !item.adminOnly || user.role === 'admin' || user.role === 'manager'
   )
 
-  const handleItemClick = (href: string, title: string) => {
-    if (
-      href === '/dashboard' ||
-      href === '/documents' ||
-      href === '/questionnaires' ||
-      href === '/audits' ||
-      href === '/settings' ||
-      href === '/calendar' ||
-      href === '/fmea'
-    ) {
-      // Navigate to implemented pages
-      router.push(href)
-    } else {
-      alert(`${title} module coming soon!`)
+  const handleItemClick = (item: SidebarItem) => {
+    if (item.comingSoon) {
+      alert(`${item.title} module coming soon!`)
+      return
     }
+    router.push(item.href)
+    onClose?.()
   }
 
   return (
@@ -197,7 +182,8 @@ export function DashboardSidebar({ className, isOpen = false, onClose }: Dashboa
       {/* Navigation */}
       <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
         {visibleItems.map((item) => {
-          const isActive = pathname === item.href
+          const isActive =
+            pathname === item.href || pathname.startsWith(`${item.href}/`)
           return (
             <Button
               key={item.title}
@@ -208,7 +194,7 @@ export function DashboardSidebar({ className, isOpen = false, onClose }: Dashboa
                   ? "bg-green-100 text-primary border-green-200" 
                   : "text-gray-700 hover:bg-green-50 hover:text-primary"
               )}
-              onClick={() => handleItemClick(item.href, item.title)}
+              onClick={() => handleItemClick(item)}
             >
               <item.icon className={cn("mr-3 h-4 w-4", item.color)} />
               <span className="truncate">{item.title}</span>
