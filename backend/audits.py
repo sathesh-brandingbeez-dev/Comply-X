@@ -32,6 +32,10 @@ from schemas import (
     AuditCreate,
     AuditEmailTemplates,
     AuditListItem,
+    AuditPlanDetail,
+    AuditPlanMilestone,
+    AuditPlanResource,
+    AuditPlanTask,
     AuditNotificationAIRequest,
     AuditNotificationAIResponse,
     AuditNotificationSettings,
@@ -391,6 +395,269 @@ def _build_ai_recommendations(audits: Sequence[AuditModel]) -> AuditAIRecommenda
     )
 
 
+def _extract_objectives(text: Optional[str]) -> List[str]:
+    if not text:
+        return []
+    cleaned: List[str] = []
+    for raw in text.replace("\r", "\n").split("\n"):
+        candidate = raw.strip()
+        if not candidate:
+            continue
+        candidate = candidate.lstrip("-•").strip()
+        if candidate:
+            cleaned.append(candidate)
+    if cleaned:
+        return cleaned
+    stripped = text.strip()
+    return [stripped] if stripped else []
+
+
+def _milestone_status_from_completion(
+    completion: Optional[int],
+    audit_status: AuditStatus,
+    end_date: date,
+) -> AuditStatus:
+    if completion is not None:
+        try:
+            completion_value = int(completion)
+        except (TypeError, ValueError):
+            completion_value = None
+        else:
+            if completion_value >= 100:
+                return AuditStatus.COMPLETED
+            if completion_value > 0:
+                return AuditStatus.IN_PROGRESS
+    if audit_status == AuditStatus.COMPLETED:
+        return AuditStatus.COMPLETED
+    if audit_status == AuditStatus.ON_HOLD:
+        return AuditStatus.ON_HOLD
+    if audit_status == AuditStatus.DRAFT:
+        return AuditStatus.DRAFT
+    if audit_status == AuditStatus.IN_PROGRESS:
+        if end_date < date.today():
+            return AuditStatus.COMPLETED
+        return AuditStatus.IN_PROGRESS
+    return AuditStatus.SCHEDULED
+
+
+def _default_milestone_statuses(status: AuditStatus) -> List[AuditStatus]:
+    if status == AuditStatus.COMPLETED:
+        return [AuditStatus.COMPLETED, AuditStatus.COMPLETED, AuditStatus.COMPLETED]
+    if status == AuditStatus.IN_PROGRESS:
+        return [AuditStatus.COMPLETED, AuditStatus.IN_PROGRESS, AuditStatus.SCHEDULED]
+    if status == AuditStatus.ON_HOLD:
+        return [AuditStatus.ON_HOLD, AuditStatus.ON_HOLD, AuditStatus.ON_HOLD]
+    if status == AuditStatus.DRAFT:
+        return [AuditStatus.DRAFT, AuditStatus.SCHEDULED, AuditStatus.SCHEDULED]
+    return [AuditStatus.SCHEDULED, AuditStatus.SCHEDULED, AuditStatus.SCHEDULED]
+
+
+def _default_milestones(audit: AuditModel) -> List[AuditPlanMilestone]:
+    start = audit.planned_start_date or date.today()
+    end = audit.planned_end_date or start
+    if end < start:
+        end = start
+    total_days = max((end - start).days, 0)
+    boundaries = [start]
+    for index in range(1, 3):
+        offset = round(total_days * index / 3)
+        next_point = start + timedelta(days=offset)
+        if next_point < boundaries[-1]:
+            next_point = boundaries[-1]
+        boundaries.append(next_point)
+    boundaries.append(end)
+    for idx in range(1, len(boundaries)):
+        if boundaries[idx] < boundaries[idx - 1]:
+            boundaries[idx] = boundaries[idx - 1]
+    names = [
+        "Planning & Preparation",
+        "Fieldwork & Testing",
+        "Reporting & Wrap-up",
+    ]
+    statuses = _default_milestone_statuses(audit.status)
+    milestones: List[AuditPlanMilestone] = []
+    for idx in range(3):
+        milestones.append(
+            AuditPlanMilestone(
+                name=names[idx],
+                start_date=boundaries[idx],
+                end_date=boundaries[idx + 1],
+                status=statuses[idx],
+            )
+        )
+    return milestones
+
+
+def _build_plan_milestones(
+    timeline_entries: Sequence[AuditTimelineEntry],
+    audit: AuditModel,
+) -> List[AuditPlanMilestone]:
+    if timeline_entries:
+        milestones: List[AuditPlanMilestone] = []
+        for entry in timeline_entries:
+            milestones.append(
+                AuditPlanMilestone(
+                    name=entry.phase,
+                    start_date=entry.start_date,
+                    end_date=entry.end_date,
+                    status=_milestone_status_from_completion(entry.completion, audit.status, entry.end_date),
+                )
+            )
+        return milestones
+    return _default_milestones(audit)
+
+
+def _task_status_from_index(index: int, total: int, progress: Optional[int]) -> str:
+    if total <= 0:
+        return "not_started"
+    progress_value = max(0, min(progress or 0, 100))
+    exact = (progress_value / 100) * total
+    completed = int(exact)
+    if index < completed:
+        return "completed"
+    if index == completed and exact - completed > 0:
+        return "in_progress"
+    return "not_started"
+
+
+def _task_status_from_completion(
+    completion: Optional[int],
+    audit_status: AuditStatus,
+) -> str:
+    if completion is not None:
+        try:
+            completion_value = int(completion)
+        except (TypeError, ValueError):
+            completion_value = None
+        else:
+            if completion_value >= 100:
+                return "completed"
+            if completion_value > 0:
+                return "in_progress"
+    if audit_status == AuditStatus.COMPLETED:
+        return "completed"
+    if audit_status == AuditStatus.IN_PROGRESS:
+        return "in_progress"
+    return "not_started"
+
+
+def _build_plan_tasks(
+    audit: AuditModel,
+    sections: Sequence[AuditChecklistSectionModel],
+    timeline_entries: Sequence[AuditTimelineEntry],
+    owners: Sequence[str],
+    lead_name: str,
+) -> List[AuditPlanTask]:
+    owner_pool = [name for name in owners if name]
+    if lead_name and lead_name not in owner_pool:
+        owner_pool.append(lead_name)
+    if not owner_pool:
+        owner_pool = ["Audit Team"]
+
+    tasks: List[AuditPlanTask] = []
+    section_list = list(sections)
+    total_sections = len(section_list)
+    if total_sections:
+        duration_days = 0
+        if audit.planned_start_date and audit.planned_end_date:
+            duration_days = max((audit.planned_end_date - audit.planned_start_date).days, 0)
+        for index, section in enumerate(section_list):
+            due_offset = 0
+            if duration_days > 0:
+                due_offset = round(((index + 1) / (total_sections + 1)) * duration_days)
+            due_date = audit.planned_start_date + timedelta(days=due_offset) if audit.planned_start_date else date.today()
+            if audit.planned_end_date and due_date > audit.planned_end_date:
+                due_date = audit.planned_end_date
+            owner = owner_pool[index % len(owner_pool)]
+            tasks.append(
+                AuditPlanTask(
+                    name=section.title,
+                    owner=owner,
+                    due_date=due_date,
+                    status=_task_status_from_index(index, total_sections, audit.progress),
+                )
+            )
+        return tasks
+
+    timeline_list = list(timeline_entries)
+    if timeline_list:
+        for index, entry in enumerate(timeline_list):
+            owner = owner_pool[index % len(owner_pool)]
+            tasks.append(
+                AuditPlanTask(
+                    name=entry.phase,
+                    owner=owner,
+                    due_date=entry.end_date,
+                    status=_task_status_from_completion(entry.completion, audit.status),
+                )
+            )
+        return tasks
+
+    default_owner = owner_pool[0]
+    fallback_due = audit.planned_end_date or audit.planned_start_date or date.today()
+    tasks.append(
+        AuditPlanTask(
+            name="Prepare audit deliverables",
+            owner=default_owner,
+            due_date=fallback_due,
+            status=_task_status_from_index(0, 1, audit.progress),
+        )
+    )
+    return tasks
+
+
+def _build_plan_resources(
+    audit: AuditModel,
+    allocations: Sequence[AuditResourceAllocation],
+    user_lookup: Dict[int, str],
+    lead_name: str,
+) -> List[AuditPlanResource]:
+    resources: List[AuditPlanResource] = []
+    for allocation in allocations:
+        name = allocation.user_name or user_lookup.get(allocation.user_id, "")
+        if not name and allocation.user_id:
+            name = f"User {allocation.user_id}"
+        if not name:
+            continue
+        role = allocation.role or "Team Member"
+        hours = allocation.allocated_hours or 0
+        resources.append(
+            AuditPlanResource(
+                role=role,
+                name=name,
+                allocated_hours=max(hours, 0),
+            )
+        )
+    if resources:
+        return resources
+
+    default_lead_name = lead_name or "Lead Auditor"
+    total_hours = audit.estimated_duration_hours or 0
+    lead_hours = total_hours // 2 if total_hours else 16
+    resources.append(
+        AuditPlanResource(
+            role="Lead Auditor",
+            name=default_lead_name,
+            allocated_hours=max(lead_hours, 8),
+        )
+    )
+
+    team_names = [user_lookup.get(uid) for uid in (audit.audit_team_ids or []) if user_lookup.get(uid)]
+    if team_names:
+        member_hours = total_hours // max(len(team_names) + 1, 1) if total_hours else 12
+        for name in team_names:
+            if name == default_lead_name:
+                continue
+            resources.append(
+                AuditPlanResource(
+                    role="Audit Team",
+                    name=name,
+                    allocated_hours=max(member_hours, 6),
+                )
+            )
+    return resources
+
+
 def _apply_filters(
     audits: Sequence[AuditModel],
     status: Optional[AuditStatus],
@@ -484,6 +751,82 @@ def get_planning_dashboard(
         audits=audit_cards,
         summary=summary,
         ai_recommendations=ai_recommendations,
+    )
+
+
+@router.get("/{audit_id}/plan", response_model=AuditPlanDetail)
+def get_audit_plan_detail(
+    audit_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    audit = (
+        db.query(AuditModel)
+        .options(
+            joinedload(AuditModel.sections).joinedload(AuditChecklistSectionModel.questions),
+            joinedload(AuditModel.lead_auditor),
+        )
+        .filter(AuditModel.id == audit_id)
+        .first()
+    )
+    if not audit:
+        raise HTTPException(status_code=404, detail="Audit not found")
+
+    department_lookup = _collect_department_lookup(db, [audit])
+    user_lookup = _collect_user_lookup(db, [audit])
+
+    lead_name = user_lookup.get(audit.lead_auditor_id)
+    if not lead_name and audit.lead_auditor:
+        first = (audit.lead_auditor.first_name or "").strip()
+        last = (audit.lead_auditor.last_name or "").strip()
+        combined = " ".join(part for part in [first, last] if part)
+        lead_name = combined or (audit.lead_auditor.username or audit.lead_auditor.email or "").strip()
+    if not lead_name:
+        lead_name = "Unassigned"
+
+    departments = [department_lookup.get(dep_id, f"Department {dep_id}") for dep_id in audit.departments or []]
+    objectives = _extract_objectives(audit.objective)
+    if not objectives and audit.scope:
+        objectives = [audit.scope.strip()]
+
+    allocations = _ensure_allocation_models(audit.resource_allocation)
+    timeline_entries = sorted(_ensure_timeline_models(audit.timeline), key=lambda entry: entry.start_date)
+
+    resources = _build_plan_resources(audit, allocations, user_lookup, lead_name)
+
+    owner_candidates: List[str] = []
+    for allocation in allocations:
+        candidate = allocation.user_name or user_lookup.get(allocation.user_id)
+        if candidate and candidate not in owner_candidates:
+            owner_candidates.append(candidate)
+    for member_id in audit.audit_team_ids or []:
+        candidate = user_lookup.get(member_id)
+        if candidate and candidate not in owner_candidates:
+            owner_candidates.append(candidate)
+
+    tasks = _build_plan_tasks(audit, audit.sections or [], timeline_entries, owner_candidates, lead_name)
+    milestones = _build_plan_milestones(timeline_entries, audit)
+
+    notes = (audit.special_requirements or "").strip() or "No special requirements documented."
+
+    return AuditPlanDetail(
+        id=audit.id,
+        title=audit.title,
+        audit_type=audit.audit_type,
+        status=audit.status,
+        risk_level=audit.risk_level,
+        lead_auditor=lead_name,
+        departments=departments,
+        start_date=audit.planned_start_date,
+        end_date=audit.planned_end_date,
+        objectives=objectives,
+        scope=audit.scope,
+        milestones=milestones,
+        tasks=tasks,
+        resources=resources,
+        notes=notes,
+        progress=audit.progress or 0,
+        compliance_frameworks=list(audit.compliance_frameworks or []),
     )
 
 
