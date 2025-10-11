@@ -219,11 +219,17 @@ function mapViewToLabel(view: ViewMode) {
 function createEventsIndex(events: AuditCalendarEvent[]) {
   const map = new Map<string, AuditCalendarEvent[]>()
   events.forEach((event) => {
-    const dateKey = event.start_date
-    if (!map.has(dateKey)) {
-      map.set(dateKey, [])
+    const start = new Date(event.start_date)
+    const end = new Date(event.end_date)
+    const cursor = new Date(start)
+    while (cursor <= end) {
+      const dateKey = cursor.toISOString().split("T")[0]
+      if (!map.has(dateKey)) {
+        map.set(dateKey, [])
+      }
+      map.get(dateKey)!.push(event)
+      cursor.setDate(cursor.getDate() + 1)
     }
-    map.get(dateKey)!.push(event)
   })
   return map
 }
@@ -313,14 +319,70 @@ export default function AuditPlanningPage() {
     return { cells, reference }
   }, [activeDate])
 
+  const weekDates = useMemo(() => {
+    const start = new Date(activeDate)
+    start.setDate(start.getDate() - start.getDay())
+    return Array.from({ length: 7 }, (_, index) => {
+      const date = new Date(start)
+      date.setDate(start.getDate() + index)
+      return date
+    })
+  }, [activeDate])
+
+  const dayEvents = useMemo(() => {
+    const key = activeDate.toISOString().split("T")[0]
+    return eventsIndex.get(key) ?? []
+  }, [activeDate, eventsIndex])
+
+  useEffect(() => {
+    setActiveDate((current) => {
+      const next = new Date(current)
+      if (viewMode === "month") {
+        return new Date(next.getFullYear(), next.getMonth(), 1)
+      }
+      if (viewMode === "week") {
+        const start = new Date(next)
+        start.setDate(start.getDate() - start.getDay())
+        return start
+      }
+      return next
+    })
+  }, [viewMode])
+
   const aiRecommendations: AuditAIRecommendations | undefined = state.data?.ai_recommendations
 
-  const changeMonth = (direction: "next" | "prev") => {
+  const changePeriod = (direction: "next" | "prev") => {
     setActiveDate((current) => {
-      const month = current.getMonth() + (direction === "next" ? 1 : -1)
-      return new Date(current.getFullYear(), month, 1)
+      const delta = direction === "next" ? 1 : -1
+      if (viewMode === "month") {
+        return new Date(current.getFullYear(), current.getMonth() + delta, 1)
+      }
+      if (viewMode === "week") {
+        return new Date(current.getFullYear(), current.getMonth(), current.getDate() + delta * 7)
+      }
+      return new Date(current.getFullYear(), current.getMonth(), current.getDate() + delta)
     })
   }
+
+  const periodLabel = useMemo(() => {
+    if (viewMode === "month") {
+      return activeDate.toLocaleDateString(undefined, { month: "long", year: "numeric" })
+    }
+    if (viewMode === "week") {
+      const start = new Date(activeDate)
+      const end = new Date(activeDate)
+      end.setDate(start.getDate() + 6)
+      const startLabel = start.toLocaleDateString(undefined, { month: "short", day: "numeric" })
+      const endLabel = end.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })
+      return `${startLabel} – ${endLabel}`
+    }
+    return activeDate.toLocaleDateString(undefined, {
+      weekday: "long",
+      month: "long",
+      day: "numeric",
+      year: "numeric",
+    })
+  }, [activeDate, viewMode])
 
   return (
     <DashboardLayout>
@@ -429,13 +491,13 @@ export default function AuditPlanningPage() {
                 </p>
               </div>
               <div className="flex items-center gap-2">
-                <Button variant="ghost" size="icon" onClick={() => changeMonth("prev")} aria-label="Previous month">
+                <Button variant="ghost" size="icon" onClick={() => changePeriod("prev")} aria-label="Previous period">
                   <ChevronDown className="h-4 w-4 rotate-90" />
                 </Button>
                 <div className="text-sm font-medium text-gray-600">
-                  {activeDate.toLocaleDateString(undefined, { month: "long", year: "numeric" })}
+                  {periodLabel}
                 </div>
-                <Button variant="ghost" size="icon" onClick={() => changeMonth("next")} aria-label="Next month">
+                <Button variant="ghost" size="icon" onClick={() => changePeriod("next")} aria-label="Next period">
                   <ChevronDown className="h-4 w-4 -rotate-90" />
                 </Button>
               </div>
@@ -447,64 +509,149 @@ export default function AuditPlanningPage() {
                 </div>
               ) : (
                 <div className="space-y-4">
-                  <div className="grid grid-cols-7 gap-2 text-xs font-semibold text-gray-500">
-                    {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day) => (
-                      <div key={day} className="text-center">
-                        {day}
-                      </div>
-                    ))}
-                  </div>
-                  <div className="grid min-h-[320px] grid-cols-7 gap-2">
-                    {monthMetadata.cells.map((day, index) => {
-                      if (!day) {
-                        return <div key={`empty-${index}`} className="rounded-lg border border-dashed border-gray-200 bg-gray-50" />
-                      }
-                      const key = day.toISOString().split("T")[0]
-                      const events = eventsIndex.get(key) ?? []
-                      return (
-                        <div
-                          key={key}
-                          className="flex flex-col gap-2 rounded-lg border border-gray-200 bg-white p-2 shadow-sm"
-                        >
-                          <div className="flex items-center justify-between">
-                            <span className="text-sm font-semibold text-gray-600">{day.getDate()}</span>
-                            <span className="text-[10px] text-gray-400">
-                              {events.length > 0 ? `${events.length} audit${events.length > 1 ? "s" : ""}` : ""}
-                            </span>
-                          </div>
-                          {events.map((event) => (
+                  {viewMode !== "day" && (
+                    <div className="grid grid-cols-7 gap-2 text-xs font-semibold text-gray-500">
+                      {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day) => (
+                        <div key={day} className="text-center">
+                          {day}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {viewMode === "month" && (
+                    <div className="grid min-h-[320px] grid-cols-7 gap-2">
+                      {monthMetadata.cells.map((day, index) => {
+                        if (!day) {
+                          return (
                             <div
-                              key={event.id}
-                              className="space-y-2 rounded-md border border-gray-100 bg-gradient-to-br from-white via-white to-green-50 p-2"
-                            >
-                              <div className="flex items-center gap-2">
-                                {getAuditIcon(event.audit_type)}
-                                <div>
-                                  <p className="line-clamp-2 text-xs font-semibold text-gray-700">{event.title}</p>
-                                  <div className="flex items-center gap-1 text-[10px] text-gray-500">
-                                    <Clock className="h-3 w-3" />
-                                    <span>
-                                      {new Date(event.start_date).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
-                                      {event.end_date !== event.start_date &&
-                                        ` - ${new Date(event.end_date).toLocaleDateString(undefined, { month: "short", day: "numeric" })}`}
-                                    </span>
+                              key={`empty-${index}`}
+                              className="rounded-lg border border-dashed border-gray-200 bg-gray-50"
+                            />
+                          )
+                        }
+                        const key = day.toISOString().split("T")[0]
+                        const events = eventsIndex.get(key) ?? []
+                        return (
+                          <div
+                            key={key}
+                            className="flex flex-col gap-2 rounded-lg border border-gray-200 bg-white p-2 shadow-sm"
+                          >
+                            <div className="flex items-center justify-between">
+                              <span className="text-sm font-semibold text-gray-600">{day.getDate()}</span>
+                              <span className="text-[10px] text-gray-400">
+                                {events.length > 0 ? `${events.length} audit${events.length > 1 ? "s" : ""}` : ""}
+                              </span>
+                            </div>
+                            {events.map((event) => (
+                              <div
+                                key={`${event.id}-${key}`}
+                                className="space-y-2 rounded-md border border-gray-100 bg-gradient-to-br from-white via-white to-green-50 p-2"
+                              >
+                                <div className="flex items-center gap-2">
+                                  {getAuditIcon(event.audit_type)}
+                                  <div>
+                                    <p className="line-clamp-2 text-xs font-semibold text-gray-700">{event.title}</p>
+                                    <div className="flex items-center gap-1 text-[10px] text-gray-500">
+                                      <Clock className="h-3 w-3" />
+                                      <span>
+                                        {new Date(event.start_date).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
+                                        {event.end_date !== event.start_date &&
+                                          ` - ${new Date(event.end_date).toLocaleDateString(undefined, { month: "short", day: "numeric" })}`}
+                                      </span>
+                                    </div>
                                   </div>
                                 </div>
+                                <div className="flex flex-wrap gap-1">
+                                  <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${STATUS_COLOR[event.status]}`}>
+                                    {STATUS_LABELS[event.status]}
+                                  </span>
+                                  <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${RISK_COLOR[event.risk_level]}`}>
+                                    {event.risk_level.toUpperCase()}
+                                  </span>
+                                </div>
+                                <div className="space-y-1">
+                                  <p className="text-[10px] font-medium text-gray-500">Lead: {event.lead_auditor}</p>
+                                  <p className="text-[10px] text-gray-400">{event.department_names.join(", ")}</p>
+                                </div>
+                                <div className="flex flex-wrap gap-1">
+                                  {event.quick_actions.map((action) => (
+                                    <Button key={action} size="sm" variant="secondary" className="h-6 px-2 text-[10px]">
+                                      {action}
+                                    </Button>
+                                  ))}
+                                </div>
                               </div>
-                              <div className="flex flex-wrap gap-1">
-                                <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${STATUS_COLOR[event.status]}`}>
-                                  {STATUS_LABELS[event.status]}
-                                </span>
-                                <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${RISK_COLOR[event.risk_level]}`}>
-                                  {event.risk_level.toUpperCase()}
-                                </span>
+                            ))}
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
+                  {viewMode === "week" && (
+                    <div className="grid min-h-[240px] grid-cols-7 gap-2">
+                      {weekDates.map((day) => {
+                        const key = day.toISOString().split("T")[0]
+                        const events = eventsIndex.get(key) ?? []
+                        return (
+                          <div key={key} className="flex flex-col gap-2 rounded-lg border border-gray-200 bg-white p-3">
+                            <div className="flex items-center justify-between">
+                              <span className="text-sm font-semibold text-gray-600">{day.getDate()}</span>
+                              <span className="text-[10px] text-gray-400">
+                                {events.length > 0 ? `${events.length} audit${events.length > 1 ? "s" : ""}` : "No audits"}
+                              </span>
+                            </div>
+                            <div className="space-y-2">
+                              {events.length === 0 ? (
+                                <p className="text-[11px] text-gray-400">No scheduled audits.</p>
+                              ) : (
+                                events.map((event) => (
+                                  <div key={`${event.id}-${key}`} className="space-y-1 rounded-md border border-gray-100 bg-slate-50 p-2">
+                                    <p className="text-xs font-semibold text-gray-700">{event.title}</p>
+                                    <div className="flex flex-wrap items-center gap-1 text-[10px] text-gray-500">
+                                      <Clock className="h-3 w-3" />
+                                      <span>{STATUS_LABELS[event.status]}</span>
+                                      <span>•</span>
+                                      <span>{event.risk_level.toUpperCase()}</span>
+                                    </div>
+                                    <p className="text-[10px] text-gray-400">Lead: {event.lead_auditor}</p>
+                                  </div>
+                                ))
+                              )}
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
+                  {viewMode === "day" && (
+                    <div className="rounded-lg border border-gray-200 bg-white p-4">
+                      <h4 className="text-sm font-semibold text-gray-700">Schedule</h4>
+                      <div className="mt-3 space-y-3">
+                        {dayEvents.length === 0 ? (
+                          <p className="text-sm text-gray-500">No audits scheduled for this day.</p>
+                        ) : (
+                          dayEvents.map((event) => (
+                            <div key={`${event.id}-day`} className="space-y-2 rounded-md border border-gray-100 bg-slate-50 p-3">
+                              <div className="flex items-start justify-between gap-2">
+                                <div>
+                                  <p className="text-sm font-semibold text-gray-800">{event.title}</p>
+                                  <p className="text-[11px] text-gray-500">
+                                    {new Date(event.start_date).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
+                                    {event.end_date !== event.start_date &&
+                                      ` – ${new Date(event.end_date).toLocaleDateString(undefined, { month: "short", day: "numeric" })}`}
+                                  </p>
+                                </div>
+                                <div className="flex flex-col items-end gap-1 text-[10px] text-gray-500">
+                                  <span className={`rounded-full px-2 py-0.5 font-medium ${STATUS_COLOR[event.status]}`}>
+                                    {STATUS_LABELS[event.status]}
+                                  </span>
+                                  <span className={`rounded-full px-2 py-0.5 font-medium ${RISK_COLOR[event.risk_level]}`}>
+                                    {event.risk_level.toUpperCase()}
+                                  </span>
+                                </div>
                               </div>
-                              <div className="space-y-1">
-                                <p className="text-[10px] font-medium text-gray-500">Lead: {event.lead_auditor}</p>
-                                <p className="text-[10px] text-gray-400">
-                                  {event.department_names.join(", ")}
-                                </p>
-                              </div>
+                              <p className="text-[11px] text-gray-500">Lead Auditor: {event.lead_auditor}</p>
+                              <p className="text-[11px] text-gray-400">Departments: {event.department_names.join(", ")}</p>
                               <div className="flex flex-wrap gap-1">
                                 {event.quick_actions.map((action) => (
                                   <Button key={action} size="sm" variant="secondary" className="h-6 px-2 text-[10px]">
@@ -513,11 +660,11 @@ export default function AuditPlanningPage() {
                                 ))}
                               </div>
                             </div>
-                          ))}
-                        </div>
-                      )
-                    })}
-                  </div>
+                          ))
+                        )}
+                      </div>
+                    </div>
+                  )}
                   <div className="flex flex-wrap items-center gap-3 border-t border-gray-100 pt-4 text-xs text-gray-500">
                     <span className="font-medium text-gray-600">Legend:</span>
                     {Object.entries(state.data?.legend ?? {}).map(([status, colour]) => (
