@@ -178,6 +178,7 @@ function AuditCreationContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const [currentStep, setCurrentStep] = useState(1)
+  const today = useMemo(() => new Date().toISOString().split("T")[0], [])
   const [submissionState, setSubmissionState] = useState<"idle" | "submitting" | "success" | "error">("idle")
   const [submissionError, setSubmissionError] = useState<string | null>(null)
 
@@ -957,15 +958,36 @@ function AuditCreationContent() {
                   <Label>Planned Start Date *</Label>
                   <Input
                     type="date"
+                    min={today}
                     value={scheduling.startDate}
                     onFocus={(event) => openNativeDatePicker(event.currentTarget)}
                     onClick={(event) => openNativeDatePicker(event.currentTarget)}
                     onChange={(event) => {
                       const value = event.target.value
-                      setScheduling((prev) => ({ ...prev, startDate: value }))
-                      setTimeline((prev) =>
-                        prev.map((entry, index) => (index === 0 ? { ...entry, start_date: value } : entry)),
-                      )
+                      setScheduling((prev) => {
+                        const adjustedEndDate =
+                          prev.endDate && prev.endDate < value ? value : prev.endDate
+
+                        setTimeline((prevTimeline) =>
+                          prevTimeline.map((entry, index) => {
+                            if (index === 0) {
+                              return { ...entry, start_date: value }
+                            }
+
+                            if (index === prevTimeline.length - 1 && adjustedEndDate) {
+                              return { ...entry, end_date: adjustedEndDate }
+                            }
+
+                            return entry
+                          }),
+                        )
+
+                        return {
+                          ...prev,
+                          startDate: value,
+                          endDate: adjustedEndDate,
+                        }
+                      })
                     }}
                   />
                 </div>
@@ -973,17 +995,26 @@ function AuditCreationContent() {
                   <Label>Planned End Date *</Label>
                   <Input
                     type="date"
+                    min={scheduling.startDate || today}
                     value={scheduling.endDate}
                     onFocus={(event) => openNativeDatePicker(event.currentTarget)}
                     onClick={(event) => openNativeDatePicker(event.currentTarget)}
                     onChange={(event) => {
                       const value = event.target.value
-                      setScheduling((prev) => ({ ...prev, endDate: value }))
-                      setTimeline((prev) =>
-                        prev.map((entry, index) =>
-                          index === prev.length - 1 ? { ...entry, end_date: value } : entry,
-                        ),
-                      )
+                      setScheduling((prev) => {
+                        const minimumEndDate = prev.startDate || today
+                        const adjustedValue = value < minimumEndDate ? minimumEndDate : value
+
+                        setTimeline((prevTimeline) =>
+                          prevTimeline.map((entry, index) =>
+                            index === prevTimeline.length - 1
+                              ? { ...entry, end_date: adjustedValue }
+                              : entry,
+                          ),
+                        )
+
+                        return { ...prev, endDate: adjustedValue }
+                      })
                     }}
                   />
                 </div>
