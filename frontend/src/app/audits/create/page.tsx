@@ -1,6 +1,7 @@
 "use client"
 
 import { Suspense, useEffect, useMemo, useState } from "react"
+import type { MouseEvent as ReactMouseEvent } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import {
   AlertCircle,
@@ -547,10 +548,28 @@ function AuditCreationContent() {
     }))
   }
 
-  const openNativeDatePicker = (input: HTMLInputElement) => {
+  const openNativeDatePicker = (event: ReactMouseEvent<HTMLInputElement>) => {
+    const input = event.currentTarget
     const picker = (input as HTMLInputElement & { showPicker?: () => void }).showPicker
-    if (typeof picker === "function") {
+
+    if (typeof picker !== "function") {
+      return
+    }
+
+    const nativeEvent = event.nativeEvent
+    const isPointerEvent =
+      typeof PointerEvent !== "undefined" && nativeEvent instanceof PointerEvent && nativeEvent.isTrusted
+
+    if (!isPointerEvent) {
+      return
+    }
+
+    try {
       picker.call(input)
+    } catch (error) {
+      if (process.env.NODE_ENV !== "production") {
+        console.warn("Unable to open native date picker", error)
+      }
     }
   }
 
@@ -960,8 +979,7 @@ function AuditCreationContent() {
                     type="date"
                     min={today}
                     value={scheduling.startDate}
-                    onFocus={(event) => openNativeDatePicker(event.currentTarget)}
-                    onClick={(event) => openNativeDatePicker(event.currentTarget)}
+                    onClick={openNativeDatePicker}
                     onChange={(event) => {
                       const value = event.target.value
                       setScheduling((prev) => {
@@ -997,8 +1015,7 @@ function AuditCreationContent() {
                     type="date"
                     min={scheduling.startDate || today}
                     value={scheduling.endDate}
-                    onFocus={(event) => openNativeDatePicker(event.currentTarget)}
-                    onClick={(event) => openNativeDatePicker(event.currentTarget)}
+                    onClick={openNativeDatePicker}
                     onChange={(event) => {
                       const value = event.target.value
                       setScheduling((prev) => {

@@ -548,14 +548,14 @@ def create_audit(
         auditee_contact_ids=payload.auditee_contact_ids,
         meeting_room=payload.meeting_room,
         special_requirements=payload.special_requirements,
-        notification_settings=payload.notification_settings.model_dump(),
-        email_templates=payload.email_templates.model_dump(),
+        notification_settings=payload.notification_settings.model_dump(mode="json"),
+        email_templates=payload.email_templates.model_dump(mode="json"),
         distribution_list_ids=payload.distribution_list_ids,
         cc_list=payload.cc_list,
         bcc_list=payload.bcc_list,
         launch_option=payload.launch_option,
-        resource_allocation=[allocation.model_dump() for allocation in payload.resource_allocation],
-        timeline=[entry.model_dump() for entry in payload.timeline],
+        resource_allocation=[allocation.model_dump(mode="json") for allocation in payload.resource_allocation],
+        timeline=[entry.model_dump(mode="json") for entry in payload.timeline],
         created_by_id=current_user.id if current_user else None,
     )
     audit.status = _derive_status(payload.launch_option, start_date)
