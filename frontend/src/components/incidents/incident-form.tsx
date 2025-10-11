@@ -376,7 +376,9 @@ export function IncidentForm({ options, onCreated }: IncidentFormProps) {
                 <select
                   id="department"
                   className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                  {...register('department_id')}
+                  {...register('department_id', {
+                    setValueAs: (value) => (value === '' ? undefined : Number(value)),
+                  })}
                 >
                   <option value="">Select department</option>
                   {options?.departments.map((department) => (
