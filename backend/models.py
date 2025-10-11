@@ -616,6 +616,40 @@ class RiskLevel(str, enum.Enum):
     CRITICAL = "critical"
 
 
+class RiskTrend(str, enum.Enum):
+    IMPROVING = "improving"
+    STABLE = "stable"
+    DETERIORATING = "deteriorating"
+
+
+class RiskConfidence(str, enum.Enum):
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+
+
+class RiskUpdateSource(str, enum.Enum):
+    MANUAL = "manual"
+    EXTERNAL_DATA = "external_data"
+    AI_ANALYSIS = "ai_analysis"
+
+
+class RiskAssessmentType(str, enum.Enum):
+    COMPREHENSIVE = "comprehensive"
+    POLITICAL = "political"
+    ECONOMIC = "economic"
+    COMPLIANCE = "compliance"
+    OPERATIONAL = "operational"
+    CUSTOM = "custom"
+
+
+class RiskScoringScale(str, enum.Enum):
+    ONE_TO_FIVE = "1-5"
+    ONE_TO_TEN = "1-10"
+    ONE_TO_HUNDRED = "1-100"
+    CUSTOM = "custom"
+
+
 class AuditType(str, enum.Enum):
     INTERNAL = "internal_audit"
     COMPLIANCE = "compliance_audit"
@@ -1187,3 +1221,149 @@ class AuditChecklistQuestion(Base):
     order_index = Column(Integer, nullable=False, default=0)
 
     section = relationship("AuditChecklistSection", back_populates="questions")
+
+
+class CountryRiskAssessment(Base):
+    __tablename__ = "country_risk_assessments"
+
+    id = Column(Integer, primary_key=True, index=True)
+    title = Column(String(255), nullable=False)
+    assessment_type = Column(Enum(RiskAssessmentType), nullable=False, default=RiskAssessmentType.COMPREHENSIVE)
+    assessment_framework = Column(String(255), nullable=True)
+    status = Column(String(50), nullable=False, default="draft")
+
+    period_start = Column(Date, nullable=False)
+    period_end = Column(Date, nullable=False)
+    update_frequency = Column(String(50), nullable=False, default="annually")
+
+    scoring_scale = Column(Enum(RiskScoringScale), nullable=False, default=RiskScoringScale.ONE_TO_HUNDRED)
+    custom_scoring_scale = Column(String(255), nullable=True)
+    impact_scale = Column(JSON, nullable=True, default=dict)
+    probability_scale = Column(JSON, nullable=True, default=dict)
+
+    assigned_assessor_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    review_team_ids = Column(JSON, nullable=True, default=list)
+
+    ai_configuration = Column(JSON, nullable=True, default=dict)
+
+    created_by_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    assigned_assessor = relationship("User", foreign_keys=[assigned_assessor_id])
+    created_by = relationship("User", foreign_keys=[created_by_id])
+
+    categories = relationship(
+        "CountryRiskCategoryWeight",
+        back_populates="assessment",
+        cascade="all, delete-orphan",
+        order_by="CountryRiskCategoryWeight.order_index",
+    )
+    countries = relationship(
+        "CountryRiskAssessmentCountry",
+        back_populates="assessment",
+        cascade="all, delete-orphan",
+        order_by="CountryRiskAssessmentCountry.country_name",
+    )
+
+
+class CountryRiskCategoryWeight(Base):
+    __tablename__ = "country_risk_category_weights"
+
+    id = Column(Integer, primary_key=True, index=True)
+    assessment_id = Column(
+        Integer,
+        ForeignKey("country_risk_assessments.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    category_key = Column(String(100), nullable=False)
+    display_name = Column(String(200), nullable=False)
+    weight = Column(Integer, nullable=False, default=0)
+    order_index = Column(Integer, nullable=False, default=0)
+    baseline_guidance = Column(Text, nullable=True)
+
+    assessment = relationship("CountryRiskAssessment", back_populates="categories")
+
+    __table_args__ = (
+        Index(
+            "ix_country_risk_category_unique",
+            "assessment_id",
+            "category_key",
+            unique=True,
+        ),
+    )
+
+
+class CountryRiskAssessmentCountry(Base):
+    __tablename__ = "country_risk_assessment_countries"
+
+    id = Column(Integer, primary_key=True, index=True)
+    assessment_id = Column(
+        Integer,
+        ForeignKey("country_risk_assessments.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    country_code = Column(String(3), nullable=False, index=True)
+    country_name = Column(String(150), nullable=False)
+
+    overall_score = Column(Float, nullable=True)
+    risk_level = Column(Enum(RiskLevel), nullable=True)
+    trend = Column(Enum(RiskTrend), nullable=True)
+    confidence = Column(Enum(RiskConfidence), nullable=True)
+    last_updated = Column(DateTime, nullable=True)
+    update_source = Column(Enum(RiskUpdateSource), nullable=True)
+    evidence = Column(Text, nullable=True)
+    comments = Column(Text, nullable=True)
+    next_review_date = Column(Date, nullable=True)
+    attachments = Column(JSON, nullable=True, default=list)
+    ai_generated = Column(Boolean, default=False)
+
+    assessment = relationship("CountryRiskAssessment", back_populates="countries")
+    category_scores = relationship(
+        "CountryRiskCategoryScore",
+        back_populates="country",
+        cascade="all, delete-orphan",
+        order_by="CountryRiskCategoryScore.category_name",
+    )
+
+    __table_args__ = (
+        Index(
+            "ix_country_risk_assessment_countries_unique",
+            "assessment_id",
+            "country_code",
+            unique=True,
+        ),
+    )
+
+
+class CountryRiskCategoryScore(Base):
+    __tablename__ = "country_risk_category_scores"
+
+    id = Column(Integer, primary_key=True, index=True)
+    country_entry_id = Column(
+        Integer,
+        ForeignKey("country_risk_assessment_countries.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    category_key = Column(String(100), nullable=False)
+    category_name = Column(String(200), nullable=False)
+    score = Column(Float, nullable=True)
+    trend = Column(Enum(RiskTrend), nullable=True)
+    confidence = Column(Enum(RiskConfidence), nullable=True)
+    evidence = Column(Text, nullable=True)
+    last_updated = Column(DateTime, nullable=True)
+    update_source = Column(Enum(RiskUpdateSource), nullable=True)
+
+    country = relationship("CountryRiskAssessmentCountry", back_populates="category_scores")
+
+    __table_args__ = (
+        Index(
+            "ix_country_risk_category_scores_unique",
+            "country_entry_id",
+            "category_key",
+            unique=True,
+        ),
+    )
