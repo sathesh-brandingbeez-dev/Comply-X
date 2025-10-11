@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo, useState } from 'react'
+import { type KeyboardEvent, useEffect, useMemo, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -69,12 +69,32 @@ export function RiskCreateForm({ options, loading, onSubmit, onSuggestWeights }:
   const [weightGuidance, setWeightGuidance] = useState<string | undefined>()
 
   const filteredCountries = useMemo(() => {
-    if (!countrySearch) return options.countries
-    return options.countries.filter((country) =>
-      country.name.toLowerCase().includes(countrySearch.toLowerCase()) ||
-      country.code.toLowerCase().includes(countrySearch.toLowerCase())
-    )
+    const searchTerm = countrySearch.trim().toLowerCase()
+    if (!searchTerm) return options.countries
+    return options.countries.filter((country) => {
+      const name = country.name?.toLowerCase() ?? ''
+      const code = country.code?.toLowerCase() ?? ''
+      return name.includes(searchTerm) || code.includes(searchTerm)
+    })
   }, [countrySearch, options.countries])
+
+  const handleCountrySearchKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === 'Enter') {
+      event.preventDefault()
+      const topMatch = filteredCountries[0]
+      if (topMatch) {
+        toggleCountry(topMatch.code)
+      }
+    }
+  }
+
+  const invalidPeriodRange = Boolean(periodStart && periodEnd && periodEnd < periodStart)
+
+  useEffect(() => {
+    if (periodStart && periodEnd && periodEnd < periodStart) {
+      setPeriodEnd(periodStart)
+    }
+  }, [periodStart, periodEnd])
 
   const toggleCountry = (code: string) => {
     setSelectedCountries((prev) =>
@@ -117,6 +137,7 @@ export function RiskCreateForm({ options, loading, onSubmit, onSuggestWeights }:
     event.preventDefault()
     if (!assignedAssessor) return
     if (!periodStart || !periodEnd) return
+    if (invalidPeriodRange) return
     if (!selectedCountries.length) return
 
     const payload = {
@@ -194,11 +215,27 @@ export function RiskCreateForm({ options, loading, onSubmit, onSuggestWeights }:
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="period-start">Assessment period *</Label>
-              <Input id="period-start" type="date" value={periodStart} onChange={(event) => setPeriodStart(event.target.value)} required />
+              <Input
+                id="period-start"
+                type="date"
+                value={periodStart}
+                onChange={(event) => setPeriodStart(event.target.value)}
+                required
+              />
             </div>
             <div className="space-y-2">
               <Label htmlFor="period-end">Period end *</Label>
-              <Input id="period-end" type="date" value={periodEnd} onChange={(event) => setPeriodEnd(event.target.value)} required />
+              <Input
+                id="period-end"
+                type="date"
+                value={periodEnd}
+                min={periodStart || undefined}
+                onChange={(event) => setPeriodEnd(event.target.value)}
+                required
+              />
+              {invalidPeriodRange ? (
+                <p className="text-xs text-red-600">Period end must be the same as or after the assessment period.</p>
+              ) : null}
             </div>
           </div>
           <div className="space-y-2">
@@ -247,28 +284,37 @@ export function RiskCreateForm({ options, loading, onSubmit, onSuggestWeights }:
                 placeholder="Filter by name or ISO code"
                 value={countrySearch}
                 onChange={(event) => setCountrySearch(event.target.value)}
+                onKeyDown={handleCountrySearchKeyDown}
               />
               <p className="text-xs text-muted-foreground">
                 {selectedCountries.length} selected
               </p>
             </div>
             <div className="grid max-h-64 grid-cols-2 gap-2 overflow-y-auto rounded-lg border border-slate-200 p-3 text-sm">
-              {filteredCountries.map((country) => {
-                const checked = selectedCountries.includes(country.code)
-                return (
-                  <button
-                    type="button"
-                    key={country.code}
-                    onClick={() => toggleCountry(country.code)}
-                    className={`flex items-center justify-between rounded border px-2 py-1 text-left text-xs transition ${
-                      checked ? 'border-emerald-500 bg-emerald-50 text-emerald-700' : 'border-transparent hover:border-emerald-200'
-                    }`}
-                  >
-                    <span>{country.name}</span>
-                    {checked ? <Badge className="bg-emerald-500 text-white">Selected</Badge> : null}
-                  </button>
-                )
-              })}
+              {filteredCountries.length ? (
+                filteredCountries.map((country) => {
+                  const checked = selectedCountries.includes(country.code)
+                  return (
+                    <button
+                      type="button"
+                      key={country.code}
+                      onClick={() => toggleCountry(country.code)}
+                      className={`flex items-center justify-between rounded border px-2 py-1 text-left text-xs transition ${
+                        checked
+                          ? 'border-emerald-500 bg-emerald-50 text-emerald-700'
+                          : 'border-transparent hover:border-emerald-200'
+                      }`}
+                    >
+                      <span>{country.name}</span>
+                      {checked ? <Badge className="bg-emerald-500 text-white">Selected</Badge> : null}
+                    </button>
+                  )
+                })
+              ) : (
+                <p className="col-span-2 rounded border border-dashed border-slate-200 bg-slate-50 p-3 text-center text-xs text-muted-foreground">
+                  No countries match "{countrySearch.trim()}".
+                </p>
+              )}
             </div>
           </div>
         </CardContent>
@@ -430,7 +476,18 @@ export function RiskCreateForm({ options, loading, onSubmit, onSuggestWeights }:
       </div>
 
       <div className="flex justify-end">
-        <Button type="submit" disabled={submitting || loading || !selectedCountries.length || !assignedAssessor}>
+        <Button
+          type="submit"
+          disabled={
+            submitting ||
+            loading ||
+            !selectedCountries.length ||
+            !assignedAssessor ||
+            !periodStart ||
+            !periodEnd ||
+            invalidPeriodRange
+          }
+        >
           {submitting ? 'Creating assessment…' : 'Create assessment'}
         </Button>
       </div>
