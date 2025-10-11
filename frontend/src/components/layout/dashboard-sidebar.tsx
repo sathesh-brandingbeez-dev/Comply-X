@@ -108,8 +108,7 @@ export function DashboardSidebar({ className, isOpen = false, onClose }: Dashboa
       title: "Corrective Actions",
       icon: BookOpen,
       href: "/corrective-actions",
-      color: "text-teal-600",
-      comingSoon: true
+      color: "text-teal-600"
     },
     {
       title: "User Management",

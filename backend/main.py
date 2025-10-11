@@ -88,6 +88,7 @@ from fmea_router import router as fmea_router
 from audits import router as audits_router
 from risk_assessments import router as risk_assessments_router
 from incidents import router as incidents_router
+from corrective_actions import router as corrective_actions_router
 # from calendar_module import router as calendar_module_router
 # from app.routes.calendar_ai import router as calendar_ai_router
 from calendar_api import router as calendar_api_router
@@ -178,6 +179,7 @@ app.include_router(fmea_router,                 prefix="/api",                  
 app.include_router(audits_router,               prefix="/api/audits",                tags=["audits"])
 app.include_router(risk_assessments_router,     prefix="/api",                       tags=["risk-assessments"])
 app.include_router(incidents_router,            prefix="/api",                       tags=["incidents"])
+app.include_router(corrective_actions_router,   prefix="/api",                       tags=["corrective-actions"])
 # app.include_router(calendar_module_router,      prefix="/api",                       tags=["calendar"])
 # app.include_router(calendar_ai_router,          prefix="/api",                       tags=["calendar-ai"])
 app.include_router(calendar_api_router)

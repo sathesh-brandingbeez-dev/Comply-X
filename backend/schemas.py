@@ -26,6 +26,16 @@ from models import (
     IncidentSeverity,
     IncidentPriority,
     InvestigationActivityType,
+    CorrectiveActionType,
+    CorrectiveActionSource,
+    CorrectiveActionPriority,
+    CorrectiveActionImpact,
+    CorrectiveActionUrgency,
+    CorrectiveActionStatus,
+    CorrectiveActionStepStatus,
+    CorrectiveActionUpdateType,
+    CorrectiveActionEvaluationMethod,
+    CorrectiveActionEffectivenessRating,
 )
 from enum import Enum
 
@@ -2207,3 +2217,291 @@ class RiskAIWeightSuggestionRequest(BaseModel):
 class RiskAIWeightSuggestionResponse(BaseModel):
     weights: List[RiskAssessmentCategoryWeight]
     guidance: List[str]
+
+
+# --- Corrective Action Schemas ---
+
+
+class CorrectiveActionAttachment(BaseModel):
+    file_name: str
+    file_url: Optional[str] = None
+    file_type: Optional[str] = None
+    uploaded_by_id: Optional[int] = None
+    uploaded_at: Optional[datetime] = None
+
+
+class CorrectiveActionStepInput(BaseModel):
+    description: str
+    responsible_person_id: Optional[int] = None
+    due_date: Optional[date] = None
+    resources_required: Optional[str] = None
+    success_criteria: Optional[str] = None
+    status: CorrectiveActionStepStatus = CorrectiveActionStepStatus.NOT_STARTED
+    progress_notes: Optional[str] = None
+    issues_obstacles: Optional[str] = None
+    completion_date: Optional[date] = None
+    evidence: List[CorrectiveActionAttachment] = Field(default_factory=list)
+
+
+class CorrectiveActionStep(CorrectiveActionStepInput):
+    id: int
+    order_index: int
+    responsible_person_name: Optional[str] = None
+
+
+class CorrectiveActionUpdateInput(BaseModel):
+    update_type: CorrectiveActionUpdateType
+    description: str
+    attachments: List[CorrectiveActionAttachment] = Field(default_factory=list)
+
+
+class CorrectiveActionUpdate(CorrectiveActionUpdateInput):
+    id: int
+    created_at: datetime
+    created_by_id: int
+    created_by_name: Optional[str] = None
+
+
+class CorrectiveActionMetricInput(BaseModel):
+    metric_name: str
+    target_value: Optional[str] = None
+    actual_value: Optional[str] = None
+    measurement_method: Optional[str] = None
+    measurement_date: Optional[date] = None
+
+
+class CorrectiveActionMetric(CorrectiveActionMetricInput):
+    id: int
+
+
+class CorrectiveActionAIInsights(BaseModel):
+    effectiveness_score: Optional[float] = None
+    predicted_rating: Optional[CorrectiveActionEffectivenessRating] = None
+    risk_score: Optional[float] = None
+    prioritized_level: Optional[CorrectiveActionPriority] = None
+    success_probability: Optional[float] = None
+    resource_recommendations: List[str] = Field(default_factory=list)
+    escalation_recommendations: List[str] = Field(default_factory=list)
+    timeline_advice: Optional[str] = None
+
+
+class CorrectiveActionSummaryCards(BaseModel):
+    total_actions: int
+    open_actions: int
+    overdue_actions: int
+    completed_this_month: int
+    average_effectiveness: Optional[float] = None
+    trend_direction: Literal["up", "down", "steady"] = "steady"
+    trend_delta: Optional[float] = None
+
+
+class CorrectiveActionStatusSlice(BaseModel):
+    status: CorrectiveActionStatus
+    count: int
+
+
+class CorrectiveActionDepartmentSlice(BaseModel):
+    department_id: Optional[int] = None
+    department_name: str
+    count: int
+
+
+class CorrectiveActionTypeSlice(BaseModel):
+    action_type: CorrectiveActionType
+    count: int
+
+
+class CorrectiveActionCompletionTrendPoint(BaseModel):
+    period: str
+    completed_count: int
+    predicted_count: int
+
+
+class CorrectiveActionAnalytics(BaseModel):
+    status_distribution: List[CorrectiveActionStatusSlice] = Field(default_factory=list)
+    department_distribution: List[CorrectiveActionDepartmentSlice] = Field(default_factory=list)
+    type_distribution: List[CorrectiveActionTypeSlice] = Field(default_factory=list)
+    completion_trend: List[CorrectiveActionCompletionTrendPoint] = Field(default_factory=list)
+
+
+class PriorityActionItem(BaseModel):
+    id: int
+    action_code: str
+    title: str
+    priority: CorrectiveActionPriority
+    impact: CorrectiveActionImpact
+    urgency: CorrectiveActionUrgency
+    status: CorrectiveActionStatus
+    due_date: Optional[date] = None
+    days_to_due: Optional[int] = None
+    progress_percent: float
+    owner_name: Optional[str] = None
+    risk_score: Optional[float] = None
+
+
+class CorrectiveActionPriorityLists(BaseModel):
+    high_priority: List[PriorityActionItem] = Field(default_factory=list)
+    overdue: List[PriorityActionItem] = Field(default_factory=list)
+    due_this_week: List[PriorityActionItem] = Field(default_factory=list)
+    recently_completed: List[PriorityActionItem] = Field(default_factory=list)
+
+
+class CorrectiveActionDashboardResponse(BaseModel):
+    summary: CorrectiveActionSummaryCards
+    analytics: CorrectiveActionAnalytics
+    priority_lists: CorrectiveActionPriorityLists
+    ai_highlights: List[str] = Field(default_factory=list)
+    last_refreshed: datetime
+
+
+class CorrectiveActionListItem(BaseModel):
+    id: int
+    action_code: str
+    title: str
+    status: CorrectiveActionStatus
+    priority: CorrectiveActionPriority
+    impact: CorrectiveActionImpact
+    urgency: CorrectiveActionUrgency
+    due_date: Optional[date] = None
+    progress_percent: float
+    owner_name: Optional[str] = None
+    effectiveness_score: Optional[float] = None
+
+
+class CorrectiveActionListResponse(BaseModel):
+    items: List[CorrectiveActionListItem]
+    total: int
+
+
+class CorrectiveActionDetail(BaseModel):
+    id: int
+    action_code: str
+    title: str
+    action_type: CorrectiveActionType
+    source_reference: CorrectiveActionSource
+    reference_id: Optional[str] = None
+    department_ids: List[int]
+    priority: CorrectiveActionPriority
+    impact: CorrectiveActionImpact
+    urgency: CorrectiveActionUrgency
+    problem_statement: str
+    root_cause: str
+    contributing_factors: Optional[str] = None
+    impact_assessment: str
+    current_controls: Optional[str] = None
+    evidence_files: List[CorrectiveActionAttachment] = Field(default_factory=list)
+    corrective_action_description: str
+    overall_due_date: date
+    action_owner_id: int
+    action_owner_name: Optional[str] = None
+    review_team_ids: List[int] = Field(default_factory=list)
+    review_team: List[str] = Field(default_factory=list)
+    budget_required: Optional[float] = None
+    approval_required: bool = False
+    approver_id: Optional[int] = None
+    approver_name: Optional[str] = None
+    status: CorrectiveActionStatus
+    progress_percent: float
+    evaluation_due_date: Optional[date] = None
+    evaluation_method: Optional[CorrectiveActionEvaluationMethod] = None
+    effectiveness_rating: Optional[CorrectiveActionEffectivenessRating] = None
+    evaluation_comments: Optional[str] = None
+    further_actions_required: Optional[bool] = None
+    follow_up_actions: Optional[str] = None
+    ai_insights: Optional[CorrectiveActionAIInsights] = None
+    steps: List[CorrectiveActionStep] = Field(default_factory=list)
+    updates: List[CorrectiveActionUpdate] = Field(default_factory=list)
+    metrics: List[CorrectiveActionMetric] = Field(default_factory=list)
+    last_updated_at: datetime
+    created_at: datetime
+
+
+class CorrectiveActionCreate(BaseModel):
+    title: str
+    action_type: CorrectiveActionType
+    source_reference: CorrectiveActionSource
+    reference_id: Optional[str] = None
+    department_ids: List[int]
+    priority: CorrectiveActionPriority
+    impact: CorrectiveActionImpact
+    urgency: CorrectiveActionUrgency
+    problem_statement: str
+    root_cause: str
+    contributing_factors: Optional[str] = None
+    impact_assessment: str
+    current_controls: Optional[str] = None
+    evidence_files: List[CorrectiveActionAttachment] = Field(default_factory=list)
+    corrective_action_description: str
+    steps: List[CorrectiveActionStepInput] = Field(default_factory=list)
+    overall_due_date: date
+    action_owner_id: int
+    review_team_ids: List[int] = Field(default_factory=list)
+    budget_required: Optional[float] = None
+    approval_required: bool = False
+    approver_id: Optional[int] = None
+    evaluation_due_date: Optional[date] = None
+    evaluation_method: Optional[CorrectiveActionEvaluationMethod] = None
+    success_metrics: List[CorrectiveActionMetricInput] = Field(default_factory=list)
+
+
+class CorrectiveActionUpdatePayload(BaseModel):
+    title: Optional[str] = None
+    action_type: Optional[CorrectiveActionType] = None
+    source_reference: Optional[CorrectiveActionSource] = None
+    reference_id: Optional[str] = None
+    department_ids: Optional[List[int]] = None
+    priority: Optional[CorrectiveActionPriority] = None
+    impact: Optional[CorrectiveActionImpact] = None
+    urgency: Optional[CorrectiveActionUrgency] = None
+    problem_statement: Optional[str] = None
+    root_cause: Optional[str] = None
+    contributing_factors: Optional[str] = None
+    impact_assessment: Optional[str] = None
+    current_controls: Optional[str] = None
+    evidence_files: Optional[List[CorrectiveActionAttachment]] = None
+    corrective_action_description: Optional[str] = None
+    overall_due_date: Optional[date] = None
+    action_owner_id: Optional[int] = None
+    review_team_ids: Optional[List[int]] = None
+    budget_required: Optional[float] = None
+    approval_required: Optional[bool] = None
+    approver_id: Optional[int] = None
+    status: Optional[CorrectiveActionStatus] = None
+    evaluation_due_date: Optional[date] = None
+    evaluation_method: Optional[CorrectiveActionEvaluationMethod] = None
+    effectiveness_rating: Optional[CorrectiveActionEffectivenessRating] = None
+    evaluation_comments: Optional[str] = None
+    further_actions_required: Optional[bool] = None
+    follow_up_actions: Optional[str] = None
+    progress_percent: Optional[float] = None
+
+
+class CorrectiveActionOptionsResponse(BaseModel):
+    action_types: List[CorrectiveActionType]
+    source_references: List[CorrectiveActionSource]
+    priority_levels: List[CorrectiveActionPriority]
+    impact_levels: List[CorrectiveActionImpact]
+    urgency_levels: List[CorrectiveActionUrgency]
+    evaluation_methods: List[CorrectiveActionEvaluationMethod]
+    step_statuses: List[CorrectiveActionStepStatus]
+    update_types: List[CorrectiveActionUpdateType]
+    departments: List[Dict[str, Any]]
+    users: List[Dict[str, Any]]
+
+
+class CorrectiveActionAIRequest(BaseModel):
+    action_type: CorrectiveActionType
+    priority: CorrectiveActionPriority
+    impact: CorrectiveActionImpact
+    urgency: CorrectiveActionUrgency
+    problem_statement: str
+    root_cause: str
+    impact_assessment: str
+    current_controls: Optional[str] = None
+    existing_steps: List[CorrectiveActionStepInput] = Field(default_factory=list)
+
+
+class CorrectiveActionAIResponse(BaseModel):
+    insights: CorrectiveActionAIInsights
+    recommended_steps: List[CorrectiveActionStepInput] = Field(default_factory=list)
+    recommended_metrics: List[CorrectiveActionMetricInput] = Field(default_factory=list)
