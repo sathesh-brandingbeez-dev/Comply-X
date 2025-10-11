@@ -37,6 +37,38 @@ class AccessLevel(str, enum.Enum):
     CONFIDENTIAL = "confidential"
     RESTRICTED = "restricted"
 
+
+class IncidentStatus(str, enum.Enum):
+    OPEN = "Open"
+    UNDER_INVESTIGATION = "Under Investigation"
+    RESOLVED = "Resolved"
+    CLOSED = "Closed"
+
+
+class IncidentSeverity(str, enum.Enum):
+    LOW = "Low"
+    MEDIUM = "Medium"
+    HIGH = "High"
+    CRITICAL = "Critical"
+
+
+class IncidentPriority(str, enum.Enum):
+    LOW = "Low"
+    MEDIUM = "Medium"
+    HIGH = "High"
+    CRITICAL = "Critical"
+
+
+class InvestigationActivityType(str, enum.Enum):
+    INTERVIEW = "Interview"
+    EVIDENCE_COLLECTION = "Evidence Collection"
+    ANALYSIS = "Analysis"
+    SITE_VISIT = "Site Visit"
+    EXPERT_CONSULTATION = "Expert Consultation"
+    TESTING = "Testing"
+    RESEARCH = "Research"
+    OTHER = "Other"
+
 # Organizational Hierarchy Models
 
 class Group(Base):
@@ -969,6 +1001,178 @@ class FMEAAction(Base):
 
     fmea = relationship("FMEA", back_populates="actions")
 
+
+
+# --- Incident Management Models ---
+
+
+class Incident(Base):
+    __tablename__ = "incidents"
+
+    id = Column(Integer, primary_key=True, index=True)
+    incident_code = Column(String(30), unique=True, index=True, nullable=False)
+    title = Column(String(200), nullable=False)
+    incident_type = Column(String(100), nullable=False)
+    incident_category = Column(String(100), nullable=True)
+
+    department_id = Column(Integer, ForeignKey("departments.id"), nullable=True)
+    location_path = Column(JSON, nullable=True)
+
+    occurred_at = Column(DateTime, nullable=False, index=True)
+    reported_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    severity = Column(Enum(IncidentSeverity), nullable=False)
+    priority = Column(Enum(IncidentPriority), default=IncidentPriority.MEDIUM, nullable=False)
+    status = Column(Enum(IncidentStatus), default=IncidentStatus.OPEN, nullable=False, index=True)
+
+    impact_assessment = Column(Text, nullable=False)
+    immediate_actions = Column(Text, nullable=True)
+
+    detailed_description = Column(Text, nullable=False)
+    what_happened = Column(Text, nullable=False)
+    root_cause = Column(Text, nullable=True)
+    contributing_factors = Column(Text, nullable=True)
+
+    people_involved_ids = Column(JSON, nullable=True)
+    witness_ids = Column(JSON, nullable=True)
+    equipment_involved = Column(Text, nullable=True)
+
+    immediate_notification_ids = Column(JSON, nullable=True)
+    escalation_path = Column(JSON, nullable=True)
+    external_notifications = Column(JSON, nullable=True)
+    public_disclosure_required = Column(Boolean, default=False, nullable=False)
+
+    resolved_at = Column(DateTime, nullable=True)
+    is_overdue = Column(Boolean, default=False, nullable=False)
+
+    ai_metadata = Column(JSON, nullable=True)
+
+    created_by_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    department = relationship("Department")
+    created_by = relationship("User", backref="reported_incidents", foreign_keys=[created_by_id])
+    attachments = relationship(
+        "IncidentAttachment",
+        cascade="all, delete-orphan",
+        back_populates="incident",
+    )
+    investigation = relationship(
+        "IncidentInvestigation",
+        cascade="all, delete-orphan",
+        back_populates="incident",
+        uselist=False,
+    )
+
+
+class IncidentAttachment(Base):
+    __tablename__ = "incident_attachments"
+
+    id = Column(Integer, primary_key=True)
+    incident_id = Column(Integer, ForeignKey("incidents.id", ondelete="CASCADE"), nullable=False)
+
+    file_name = Column(String(255), nullable=False)
+    file_url = Column(String(512), nullable=True)
+    file_type = Column(String(100), nullable=True)
+    file_size = Column(Integer, nullable=True)
+    description = Column(Text, nullable=True)
+
+    uploaded_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    uploaded_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    evidence_metadata = Column(JSON, nullable=True)
+
+    incident = relationship("Incident", back_populates="attachments")
+    uploaded_by = relationship("User", backref="incident_attachments")
+
+
+class IncidentInvestigation(Base):
+    __tablename__ = "incident_investigations"
+
+    id = Column(Integer, primary_key=True)
+    incident_id = Column(
+        Integer,
+        ForeignKey("incidents.id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,
+    )
+
+    status = Column(Enum(IncidentStatus), default=IncidentStatus.OPEN, nullable=False)
+    priority = Column(Enum(IncidentPriority), default=IncidentPriority.MEDIUM, nullable=False)
+
+    assigned_investigator_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    investigation_team_ids = Column(JSON, nullable=True)
+
+    target_resolution_date = Column(Date, nullable=True)
+    actual_resolution_date = Column(Date, nullable=True)
+
+    rca_method = Column(String(100), nullable=True)
+    primary_root_cause = Column(Text, nullable=True)
+    rca_notes = Column(Text, nullable=True)
+    ai_guidance = Column(JSON, nullable=True)
+
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    incident = relationship("Incident", back_populates="investigation")
+    assigned_investigator = relationship(
+        "User",
+        backref="assigned_incident_investigations",
+        foreign_keys=[assigned_investigator_id],
+    )
+    activities = relationship(
+        "IncidentInvestigationActivity",
+        cascade="all, delete-orphan",
+        back_populates="investigation",
+    )
+    root_cause_factors = relationship(
+        "IncidentRootCauseFactor",
+        cascade="all, delete-orphan",
+        back_populates="investigation",
+    )
+
+
+class IncidentInvestigationActivity(Base):
+    __tablename__ = "incident_investigation_activities"
+
+    id = Column(Integer, primary_key=True)
+    investigation_id = Column(
+        Integer,
+        ForeignKey("incident_investigations.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    activity_time = Column(DateTime, nullable=False, index=True)
+    activity_type = Column(Enum(InvestigationActivityType), nullable=False)
+    investigator_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+
+    description = Column(Text, nullable=True)
+    findings = Column(Text, nullable=True)
+    evidence_url = Column(String(512), nullable=True)
+    follow_up_required = Column(Boolean, default=False, nullable=False)
+
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    investigation = relationship("IncidentInvestigation", back_populates="activities")
+    investigator = relationship("User", backref="incident_investigation_activities")
+
+
+class IncidentRootCauseFactor(Base):
+    __tablename__ = "incident_root_cause_factors"
+
+    id = Column(Integer, primary_key=True)
+    investigation_id = Column(
+        Integer,
+        ForeignKey("incident_investigations.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    description = Column(Text, nullable=False)
+    category = Column(String(50), nullable=False)
+    impact_level = Column(Enum(IncidentSeverity), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    investigation = relationship("IncidentInvestigation", back_populates="root_cause_factors")
 
 
 # --- Calendar & Project Timeline Models ---

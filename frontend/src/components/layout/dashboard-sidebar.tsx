@@ -96,8 +96,7 @@ export function DashboardSidebar({ className, isOpen = false, onClose }: Dashboa
       title: "Incident Reporting",
       icon: Activity,
       href: "/incidents",
-      color: "text-red-600",
-      comingSoon: true
+      color: "text-red-600"
     },
     {
       title: "Calendar",
