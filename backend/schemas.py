@@ -22,6 +22,10 @@ from models import (
     AuditType,
     AuditStatus,
     AuditQuestionType,
+    IncidentStatus,
+    IncidentSeverity,
+    IncidentPriority,
+    InvestigationActivityType,
 )
 from enum import Enum
 
@@ -1068,6 +1072,376 @@ class FMEADashboardSummary(BaseModel):
     completed_actions: int
     overdue_actions: int
 
+
+
+# --- Incident Management Schemas ---
+
+
+class IncidentAttachmentInput(BaseModel):
+    file_name: str = Field(..., max_length=255)
+    file_url: Optional[str] = None
+    file_type: Optional[str] = None
+    file_size: Optional[int] = Field(default=None, ge=0)
+    description: Optional[str] = None
+
+
+class IncidentAttachmentResponse(IncidentAttachmentInput):
+    id: int
+    uploaded_by_id: Optional[int] = None
+    uploaded_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class IncidentRootCauseFactorInput(BaseModel):
+    description: str
+    category: str
+    impact_level: IncidentSeverity
+
+
+class IncidentRootCauseFactorResponse(IncidentRootCauseFactorInput):
+    id: int
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class IncidentInvestigationActivityInput(BaseModel):
+    activity_time: datetime
+    activity_type: InvestigationActivityType
+    investigator_id: Optional[int] = None
+    description: Optional[str] = None
+    findings: Optional[str] = None
+    evidence_url: Optional[str] = None
+    follow_up_required: bool = False
+
+
+class IncidentInvestigationActivityResponse(IncidentInvestigationActivityInput):
+    id: int
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class IncidentInvestigationDetail(BaseModel):
+    status: IncidentStatus
+    priority: IncidentPriority
+    assigned_investigator_id: Optional[int] = None
+    investigation_team_ids: List[int] = Field(default_factory=list)
+    target_resolution_date: Optional[date] = None
+    actual_resolution_date: Optional[date] = None
+    rca_method: Optional[str] = None
+    primary_root_cause: Optional[str] = None
+    rca_notes: Optional[str] = None
+    ai_guidance: Optional[Dict[str, Any]] = None
+    root_cause_factors: List[IncidentRootCauseFactorResponse] = Field(default_factory=list)
+    activities: List[IncidentInvestigationActivityResponse] = Field(default_factory=list)
+
+
+class IncidentInvestigationUpdate(BaseModel):
+    status: Optional[IncidentStatus] = None
+    priority: Optional[IncidentPriority] = None
+    assigned_investigator_id: Optional[int] = None
+    investigation_team_ids: Optional[List[int]] = None
+    target_resolution_date: Optional[date] = None
+    actual_resolution_date: Optional[date] = None
+    rca_method: Optional[str] = None
+    primary_root_cause: Optional[str] = None
+    rca_notes: Optional[str] = None
+    root_cause_factors: Optional[List[IncidentRootCauseFactorInput]] = None
+
+
+class IncidentCreate(BaseModel):
+    title: str = Field(..., max_length=200)
+    incident_type: str
+    incident_category: Optional[str] = None
+    department_id: Optional[int] = None
+    location_path: Optional[Dict[str, Any]] = None
+    occurred_at: datetime
+    reported_at: Optional[datetime] = None
+    severity: IncidentSeverity
+    impact_assessment: str
+    immediate_actions: Optional[str] = None
+    detailed_description: str
+    what_happened: str
+    root_cause: Optional[str] = None
+    contributing_factors: Optional[str] = None
+    people_involved_ids: List[int] = Field(default_factory=list)
+    witness_ids: List[int] = Field(default_factory=list)
+    equipment_involved: Optional[str] = None
+    immediate_notification_ids: List[int] = Field(default_factory=list)
+    escalation_path: Optional[List[str]] = None
+    external_notifications: List[str] = Field(default_factory=list)
+    public_disclosure_required: bool = False
+    attachments: List[IncidentAttachmentInput] = Field(default_factory=list)
+
+
+class IncidentUpdate(BaseModel):
+    title: Optional[str] = None
+    incident_type: Optional[str] = None
+    incident_category: Optional[str] = None
+    department_id: Optional[int] = None
+    location_path: Optional[Dict[str, Any]] = None
+    occurred_at: Optional[datetime] = None
+    reported_at: Optional[datetime] = None
+    severity: Optional[IncidentSeverity] = None
+    status: Optional[IncidentStatus] = None
+    priority: Optional[IncidentPriority] = None
+    impact_assessment: Optional[str] = None
+    immediate_actions: Optional[str] = None
+    detailed_description: Optional[str] = None
+    what_happened: Optional[str] = None
+    root_cause: Optional[str] = None
+    contributing_factors: Optional[str] = None
+    people_involved_ids: Optional[List[int]] = None
+    witness_ids: Optional[List[int]] = None
+    equipment_involved: Optional[str] = None
+    immediate_notification_ids: Optional[List[int]] = None
+    escalation_path: Optional[List[str]] = None
+    external_notifications: Optional[List[str]] = None
+    public_disclosure_required: Optional[bool] = None
+
+
+class IncidentSummaryCards(BaseModel):
+    total_incidents: int
+    open_incidents: int
+    resolved_this_month: int
+    average_resolution_time_hours: Optional[float]
+    overdue_incidents: int
+    trend_direction: Literal["up", "down", "flat"]
+    trend_change_percentage: Optional[float] = None
+
+
+class IncidentTrendPoint(BaseModel):
+    period: str
+    open_count: int
+    resolved_count: int
+    predicted_count: Optional[int] = None
+
+
+class IncidentCategoryBreakdown(BaseModel):
+    category: str
+    count: int
+
+
+class IncidentSeverityBreakdown(BaseModel):
+    severity: IncidentSeverity
+    count: int
+
+
+class IncidentDepartmentPerformance(BaseModel):
+    department_id: Optional[int] = None
+    department_name: str
+    average_resolution_hours: Optional[float] = None
+    open_count: int = 0
+
+
+class IncidentAIInsights(BaseModel):
+    narrative: str
+    forecast_next_month: int
+    confidence: float
+    alerts: List[str] = Field(default_factory=list)
+    resource_recommendations: List[str] = Field(default_factory=list)
+
+
+class IncidentAnalytics(BaseModel):
+    trend: List[IncidentTrendPoint]
+    categories: List[IncidentCategoryBreakdown]
+    severity: List[IncidentSeverityBreakdown]
+    department_performance: List[IncidentDepartmentPerformance]
+    ai: IncidentAIInsights
+
+
+class IncidentListItem(BaseModel):
+    id: int
+    incident_code: str
+    title: str
+    status: IncidentStatus
+    severity: IncidentSeverity
+    priority: IncidentPriority
+    department_name: Optional[str] = None
+    occurred_at: datetime
+    reported_at: datetime
+    overdue: bool
+    assigned_investigator_id: Optional[int] = None
+
+
+class IncidentDetail(BaseModel):
+    id: int
+    incident_code: str
+    title: str
+    incident_type: str
+    incident_category: Optional[str]
+    department_id: Optional[int]
+    location_path: Optional[Dict[str, Any]]
+    occurred_at: datetime
+    reported_at: datetime
+    severity: IncidentSeverity
+    status: IncidentStatus
+    priority: IncidentPriority
+    impact_assessment: str
+    immediate_actions: Optional[str]
+    detailed_description: str
+    what_happened: str
+    root_cause: Optional[str]
+    contributing_factors: Optional[str]
+    people_involved_ids: List[int]
+    witness_ids: List[int]
+    equipment_involved: Optional[str]
+    immediate_notification_ids: List[int]
+    escalation_path: Optional[List[str]]
+    external_notifications: List[str]
+    public_disclosure_required: bool
+    resolved_at: Optional[datetime]
+    created_by_id: int
+    attachments: List[IncidentAttachmentResponse]
+    investigation: Optional[IncidentInvestigationDetail]
+    ai_metadata: Optional[Dict[str, Any]]
+
+    class Config:
+        from_attributes = True
+
+
+class IncidentListResponse(BaseModel):
+    items: List[IncidentListItem]
+    total: int
+
+
+class IncidentDashboardResponse(BaseModel):
+    last_refreshed: datetime
+    summary: IncidentSummaryCards
+    analytics: IncidentAnalytics
+
+
+class IncidentDepartmentOption(BaseModel):
+    id: int
+    name: str
+    site: Optional[str] = None
+
+
+class IncidentUserOption(BaseModel):
+    id: int
+    name: str
+    role: Optional[str] = None
+
+
+class IncidentLocationOption(BaseModel):
+    id: int
+    label: str
+
+
+class IncidentOptionsResponse(BaseModel):
+    incident_types: List[str]
+    incident_categories: Dict[str, List[str]]
+    departments: List[IncidentDepartmentOption]
+    locations: List[IncidentLocationOption]
+    users: List[IncidentUserOption]
+
+
+class IncidentTrendForecastRequest(BaseModel):
+    history: List[IncidentTrendPoint]
+    include_recent_alerts: bool = True
+
+
+class IncidentTrendForecastResponse(BaseModel):
+    projections: List[IncidentTrendPoint]
+    narrative: str
+    confidence: float
+    alerts: List[str] = Field(default_factory=list)
+
+
+class IncidentClassificationRequest(BaseModel):
+    title: str
+    incident_type: str
+    description: str
+    impact_assessment: Optional[str] = None
+
+
+class IncidentClassificationResponse(BaseModel):
+    suggested_category: str
+    rationale: str
+
+
+class IncidentSeverityAssessmentRequest(BaseModel):
+    description: str
+    impact_assessment: Optional[str] = None
+    immediate_actions: Optional[str] = None
+
+
+class IncidentSeverityAssessmentResponse(BaseModel):
+    recommended_severity: IncidentSeverity
+    confidence: float
+    indicators: List[str] = Field(default_factory=list)
+
+
+class IncidentResourceSuggestionRequest(BaseModel):
+    severity: IncidentSeverity
+    department_name: Optional[str] = None
+    open_incident_count: int = 0
+    severity_distribution: Optional[Dict[IncidentSeverity, int]] = None
+
+
+class IncidentResourceSuggestionResponse(BaseModel):
+    recommended_headcount: int
+    shift_guidance: str
+    specialist_support: List[str] = Field(default_factory=list)
+
+
+class IncidentDuplicateDetectionRequest(BaseModel):
+    title: str
+    description: str
+    occurred_at: datetime
+
+
+class IncidentDuplicateMatch(BaseModel):
+    incident_id: int
+    incident_code: str
+    title: str
+    similarity: float
+    occurred_at: datetime
+
+
+class IncidentDuplicateDetectionResponse(BaseModel):
+    matches: List[IncidentDuplicateMatch]
+
+
+class IncidentInvestigationInsightsRequest(BaseModel):
+    incident_id: Optional[int] = None
+    incident_type: Optional[str] = None
+    severity: Optional[IncidentSeverity] = None
+    description: Optional[str] = None
+    contributing_factors: Optional[str] = None
+
+
+class IncidentInvestigationInsightsResponse(BaseModel):
+    recommended_rca_methods: List[str]
+    suggested_primary_cause: Optional[str]
+    contributing_factors: List[str]
+    timeline_guidance: List[str]
+
+
+class IncidentTimelineRequest(BaseModel):
+    incident_type: str
+    severity: IncidentSeverity
+    occurred_at: datetime
+
+
+class IncidentTimelineResponse(BaseModel):
+    target_resolution_date: date
+    timeline_guidance: List[str]
+    priority_rationale: str
+
+
+class IncidentEscalationRequest(BaseModel):
+    severity: IncidentSeverity
+    department_id: Optional[int] = None
+
+
+class IncidentEscalationResponse(BaseModel):
+    steps: List[str]
 
 
 # --- Calendar & Project Timeline Schemas ---

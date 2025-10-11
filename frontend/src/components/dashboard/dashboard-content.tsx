@@ -5,6 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
+import { useRouter } from 'next/navigation'
 import { 
   TrendingUp, 
   TrendingDown, 
@@ -21,6 +22,7 @@ import {
 
 export function DashboardContent() {
   const { user } = useAuth()
+  const router = useRouter()
 
   if (!user) return null
 
@@ -317,10 +319,10 @@ export function DashboardContent() {
               <Shield className="h-5 w-5 lg:h-6 lg:w-6 text-purple-600" />
               <span className="text-center">Start Audit</span>
             </Button>
-            <Button 
-              variant="outline" 
+            <Button
+              variant="outline"
               className="h-20 lg:h-24 flex-col space-y-1 lg:space-y-2 border-green-200 text-xs lg:text-sm"
-              onClick={() => alert('Report Incident coming soon!')}
+              onClick={() => router.push('/incidents')}
             >
               <AlertCircle className="h-5 w-5 lg:h-6 lg:w-6 text-orange-600" />
               <span className="text-center">Report Incident</span>

@@ -121,7 +121,7 @@ export function DashboardHeader({ onMenuClick }: DashboardHeaderProps) {
             <DropdownMenuItem onClick={() => alert('New Audit coming soon!')}>
               🛡️ Start New Audit
             </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => alert('Report Incident coming soon!')}>
+            <DropdownMenuItem onClick={() => router.push('/incidents')}>
               🚨 Report Incident
             </DropdownMenuItem>
             <DropdownMenuSeparator />

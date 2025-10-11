@@ -87,6 +87,7 @@ from questionnaires import router as questionnaires_router
 from fmea_router import router as fmea_router
 from audits import router as audits_router
 from risk_assessments import router as risk_assessments_router
+from incidents import router as incidents_router
 # from calendar_module import router as calendar_module_router
 # from app.routes.calendar_ai import router as calendar_ai_router
 from calendar_api import router as calendar_api_router
@@ -110,6 +111,11 @@ try:
     from app.routes.risk_ai import router as risk_ai_router
 except Exception:
     risk_ai_router = None
+
+try:
+    from app.routes.incident_ai import router as incident_ai_router
+except Exception:
+    incident_ai_router = None
 
 # ⬇️ import your models Base and engine
 from models import Base
@@ -171,6 +177,7 @@ app.include_router(questionnaires_router,       prefix="/api/questionnaires",   
 app.include_router(fmea_router,                 prefix="/api",                       tags=["fmea"])
 app.include_router(audits_router,               prefix="/api/audits",                tags=["audits"])
 app.include_router(risk_assessments_router,     prefix="/api",                       tags=["risk-assessments"])
+app.include_router(incidents_router,            prefix="/api",                       tags=["incidents"])
 # app.include_router(calendar_module_router,      prefix="/api",                       tags=["calendar"])
 # app.include_router(calendar_ai_router,          prefix="/api",                       tags=["calendar-ai"])
 app.include_router(calendar_api_router)
@@ -187,6 +194,9 @@ if document_ai_router:
 
 if risk_ai_router:
     app.include_router(risk_ai_router,         prefix="/api",                      tags=["risk-ai"])
+
+if incident_ai_router:
+    app.include_router(incident_ai_router,     prefix="/api",                      tags=["incidents-ai"])
 
 # Optional: manual init endpoint if you ever need to click it
 @app.post("/api/dev/init-db", tags=["health"])
