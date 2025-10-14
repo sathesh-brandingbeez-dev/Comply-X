@@ -116,7 +116,6 @@ export function DashboardSidebar({ className, isOpen = false, onClose }: Dashboa
       href: "/users",
       color: "text-cyan-600",
       adminOnly: true,
-      comingSoon: true
     },
     // {
     //   title: "Settings",
@@ -131,10 +130,6 @@ export function DashboardSidebar({ className, isOpen = false, onClose }: Dashboa
   )
 
   const handleItemClick = (item: SidebarItem) => {
-    if (item.comingSoon) {
-      alert(`${item.title} module coming soon!`)
-      return
-    }
     router.push(item.href)
     onClose?.()
   }
