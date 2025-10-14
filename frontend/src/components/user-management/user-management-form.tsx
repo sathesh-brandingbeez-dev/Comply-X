@@ -203,7 +203,7 @@ export function UserManagementForm({ options, onCreated }: UserManagementFormPro
         is_active: values.is_active,
         is_verified: values.is_verified,
         mfa_enabled: values.mfa_enabled,
-        onboarding_steps,
+        onboarding_steps: onboardingSteps,
       }
 
       await api('/user-management', {
