@@ -4,6 +4,7 @@ from typing import Optional, List, Union, Dict, Any, Literal
 from datetime import datetime, date
 from models import (
     UserRole,
+    PermissionLevel,
     DocumentStatus,
     DocumentType,
     AccessLevel,
@@ -2505,3 +2506,221 @@ class CorrectiveActionAIResponse(BaseModel):
     insights: CorrectiveActionAIInsights
     recommended_steps: List[CorrectiveActionStepInput] = Field(default_factory=list)
     recommended_metrics: List[CorrectiveActionMetricInput] = Field(default_factory=list)
+
+
+# ---------------------------------------------------------------------------
+# User Management Module Schemas
+# ---------------------------------------------------------------------------
+
+
+class UserManagementSummaryCards(BaseModel):
+    total_users: int
+    active_users: int
+    inactive_users: int
+    pending_verification: int
+    new_this_month: int
+    average_tenure_days: float
+    mfa_enabled_rate: float
+
+
+class UserManagementStatusSlice(BaseModel):
+    status: str
+    count: int
+    percentage: float
+
+
+class UserManagementRoleSlice(BaseModel):
+    role: UserRole
+    count: int
+
+
+class UserManagementDepartmentSlice(BaseModel):
+    department_id: Optional[int] = None
+    department_name: str
+    count: int
+
+
+class UserManagementGrowthTrendPoint(BaseModel):
+    period: str
+    user_count: int
+
+
+class UserManagementAnalytics(BaseModel):
+    status_distribution: List[UserManagementStatusSlice] = Field(default_factory=list)
+    role_distribution: List[UserManagementRoleSlice] = Field(default_factory=list)
+    department_distribution: List[UserManagementDepartmentSlice] = Field(default_factory=list)
+    growth_trend: List[UserManagementGrowthTrendPoint] = Field(default_factory=list)
+
+
+class UserManagementPriorityUser(BaseModel):
+    id: int
+    full_name: str
+    role: UserRole
+    department: Optional[str] = None
+    last_login: Optional[datetime] = None
+    risk_score: float
+    mfa_enabled: bool
+    status: str
+
+
+class UserManagementPriorityLists(BaseModel):
+    key_roles: List[UserManagementPriorityUser] = Field(default_factory=list)
+    inactive_accounts: List[UserManagementPriorityUser] = Field(default_factory=list)
+    pending_verification: List[UserManagementPriorityUser] = Field(default_factory=list)
+    recently_added: List[UserManagementPriorityUser] = Field(default_factory=list)
+
+
+class UserManagementAIInsights(BaseModel):
+    workforce_health_score: float
+    risk_alerts: List[str] = Field(default_factory=list)
+    recommended_focus: List[str] = Field(default_factory=list)
+    resource_recommendations: List[str] = Field(default_factory=list)
+    narrative: str
+
+
+class UserManagementDashboardResponse(BaseModel):
+    summary: UserManagementSummaryCards
+    analytics: UserManagementAnalytics
+    priority_lists: UserManagementPriorityLists
+    ai_summary: UserManagementAIInsights
+    last_refreshed: datetime
+
+
+class UserManagementListItem(BaseModel):
+    id: int
+    full_name: str
+    email: EmailStr
+    role: UserRole
+    department: Optional[str] = None
+    status: str
+    last_login: Optional[datetime] = None
+    created_at: datetime
+    risk_score: float
+    mfa_enabled: bool
+
+
+class UserManagementListResponse(BaseModel):
+    items: List[UserManagementListItem]
+    total: int
+
+
+class UserManagementOnboardingStep(BaseModel):
+    title: str
+    status: str
+    due_date: Optional[date] = None
+    owner: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class UserManagementActivity(BaseModel):
+    timestamp: datetime
+    activity_type: str
+    description: str
+    actor: Optional[str] = None
+
+
+class UserManagementDetail(BaseModel):
+    id: int
+    full_name: str
+    email: EmailStr
+    role: UserRole
+    department: Optional[str] = None
+    manager: Optional[str] = None
+    permission_level: PermissionLevel
+    is_active: bool
+    is_verified: bool
+    mfa_enabled: bool
+    phone: Optional[str] = None
+    position: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
+    last_login: Optional[datetime] = None
+    areas_of_responsibility: List[str] = Field(default_factory=list)
+    onboarding_progress: float
+    onboarding_steps: List[UserManagementOnboardingStep] = Field(default_factory=list)
+    engagement_score: float
+    attrition_risk: float
+    risk_level: str
+    activity_timeline: List[UserManagementActivity] = Field(default_factory=list)
+    access_insights: List[str] = Field(default_factory=list)
+
+
+class UserManagementDepartmentOption(BaseModel):
+    id: int
+    name: str
+
+
+class UserManagementManagerOption(BaseModel):
+    id: int
+    full_name: str
+    role: UserRole
+
+
+class UserManagementOptionsResponse(BaseModel):
+    roles: List[UserRole]
+    permission_levels: List[PermissionLevel]
+    departments: List[UserManagementDepartmentOption]
+    managers: List[UserManagementManagerOption]
+    timezones: List[str]
+
+
+class UserManagementOnboardingStepInput(BaseModel):
+    title: str
+    owner_role: Optional[str] = None
+    due_in_days: Optional[int] = None
+    notes: Optional[str] = None
+
+
+class UserManagementCreate(BaseModel):
+    email: EmailStr
+    username: str
+    first_name: str
+    last_name: str
+    role: UserRole
+    password: Optional[str] = None
+    department_id: Optional[int] = None
+    permission_level: PermissionLevel = PermissionLevel.VIEW_ONLY
+    phone: Optional[str] = None
+    position: Optional[str] = None
+    employee_id: Optional[str] = None
+    reporting_manager_id: Optional[int] = None
+    areas_of_responsibility: List[str] = Field(default_factory=list)
+    timezone: Optional[str] = None
+    notifications_email: bool = True
+    notifications_sms: bool = False
+    is_active: bool = True
+    is_verified: bool = False
+    mfa_enabled: bool = False
+    onboarding_steps: List[UserManagementOnboardingStepInput] = Field(default_factory=list)
+
+
+class UserManagementUpdate(BaseModel):
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    role: Optional[UserRole] = None
+    department_id: Optional[int] = None
+    permission_level: Optional[PermissionLevel] = None
+    phone: Optional[str] = None
+    position: Optional[str] = None
+    reporting_manager_id: Optional[int] = None
+    is_active: Optional[bool] = None
+    is_verified: Optional[bool] = None
+    mfa_enabled: Optional[bool] = None
+    areas_of_responsibility: Optional[List[str]] = None
+
+
+class UserManagementAIRequest(BaseModel):
+    role: UserRole
+    department: Optional[str] = None
+    responsibilities: List[str] = Field(default_factory=list)
+    experience_level: Literal["junior", "mid", "senior"] = "mid"
+    requires_mfa: bool = False
+    remote_worker: bool = False
+    tool_stack: List[str] = Field(default_factory=list)
+
+
+class UserManagementAIResponse(BaseModel):
+    insights: UserManagementAIInsights
+    recommended_steps: List[UserManagementOnboardingStepInput] = Field(default_factory=list)
+    recommended_permissions: List[str] = Field(default_factory=list)
+    resource_recommendations: List[str] = Field(default_factory=list)
