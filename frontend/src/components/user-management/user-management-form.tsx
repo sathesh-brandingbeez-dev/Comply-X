@@ -75,6 +75,8 @@ export function UserManagementForm({ options, onCreated }: UserManagementFormPro
   const [errorMessage, setErrorMessage] = useState<string | undefined>()
   const [successMessage, setSuccessMessage] = useState<string | undefined>()
 
+  const UNASSIGNED_VALUE = '__none__'
+
   const departmentMap = useMemo(() => {
     const map = new Map<number, string>()
     options?.departments.forEach((dept) => map.set(dept.id, dept.name))
@@ -297,14 +299,16 @@ export function UserManagementForm({ options, onCreated }: UserManagementFormPro
             <div className="space-y-2">
               <Label htmlFor="department_id">Department</Label>
               <Select
-                value={watch('department_id') ?? ''}
-                onValueChange={(value) => setValue('department_id', value || undefined)}
+                value={watch('department_id') ?? UNASSIGNED_VALUE}
+                onValueChange={(value) =>
+                  setValue('department_id', value === UNASSIGNED_VALUE ? undefined : value)
+                }
               >
                 <SelectTrigger id="department_id">
                   <SelectValue placeholder="Select department" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">Unassigned</SelectItem>
+                  <SelectItem value={UNASSIGNED_VALUE}>Unassigned</SelectItem>
                   {options?.departments.map((dept) => (
                     <SelectItem key={dept.id} value={String(dept.id)}>
                       {dept.name}
@@ -334,14 +338,16 @@ export function UserManagementForm({ options, onCreated }: UserManagementFormPro
             <div className="space-y-2">
               <Label htmlFor="reporting_manager_id">Reporting Manager</Label>
               <Select
-                value={watch('reporting_manager_id') ?? ''}
-                onValueChange={(value) => setValue('reporting_manager_id', value || undefined)}
+                value={watch('reporting_manager_id') ?? UNASSIGNED_VALUE}
+                onValueChange={(value) =>
+                  setValue('reporting_manager_id', value === UNASSIGNED_VALUE ? undefined : value)
+                }
               >
                 <SelectTrigger id="reporting_manager_id">
                   <SelectValue placeholder="Select manager" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">Unassigned</SelectItem>
+                  <SelectItem value={UNASSIGNED_VALUE}>Unassigned</SelectItem>
                   {options?.managers.map((manager) => (
                     <SelectItem key={manager.id} value={String(manager.id)}>
                       {manager.full_name}
