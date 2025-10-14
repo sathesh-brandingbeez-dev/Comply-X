@@ -2589,7 +2589,7 @@ class UserManagementDashboardResponse(BaseModel):
 class UserManagementListItem(BaseModel):
     id: int
     full_name: str
-    email: EmailStr
+    email: str
     role: UserRole
     department: Optional[str] = None
     status: str
@@ -2622,7 +2622,7 @@ class UserManagementActivity(BaseModel):
 class UserManagementDetail(BaseModel):
     id: int
     full_name: str
-    email: EmailStr
+    email: str
     role: UserRole
     department: Optional[str] = None
     manager: Optional[str] = None
