@@ -537,14 +537,16 @@ export function CorrectiveActionForm({ options, onCreated }: CorrectiveActionFor
           <CardDescription>Break down the action plan into accountable steps with due dates.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          {stepFields.map((field, index) => (
-            <div key={field.id} className="rounded-lg border border-green-100 p-4 space-y-3">
-              <div className="flex items-center justify-between">
-                <h4 className="text-sm font-semibold text-slate-900">Step {index + 1}</h4>
-                {stepFields.length > 1 && (
-                  <Button type="button" variant="ghost" size="icon" onClick={() => removeStep(index)}>
-                    <Trash2 className="h-4 w-4 text-rose-500" />
-                  </Button>
+          {stepFields.map((field, index) => {
+            const responsiblePersonId = watch(`steps.${index}.responsible_person_id` as const);
+            return (
+              <div key={field.id} className="rounded-lg border border-green-100 p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-sm font-semibold text-slate-900">Step {index + 1}</h4>
+                  {stepFields.length > 1 && (
+                    <Button type="button" variant="ghost" size="icon" onClick={() => removeStep(index)}>
+                      <Trash2 className="h-4 w-4 text-rose-500" />
+                    </Button>
                 )}
               </div>
               <div className="grid gap-3 md:grid-cols-2">
@@ -559,14 +561,19 @@ export function CorrectiveActionForm({ options, onCreated }: CorrectiveActionFor
                 <div className="space-y-2">
                   <Label>Responsible Person</Label>
                   <Select
-                    value={String(watch(`steps.${index}.responsible_person_id`) ?? '')}
-                    onValueChange={(value) => setValue(`steps.${index}.responsible_person_id`, value ? Number(value) : undefined)}
+                    value={responsiblePersonId !== undefined ? String(responsiblePersonId) : undefined}
+                    onValueChange={(value) =>
+                      setValue(
+                        `steps.${index}.responsible_person_id`,
+                        value === "unassigned" ? undefined : Number(value)
+                      )
+                    }
                   >
                     <SelectTrigger>
                       <SelectValue placeholder="Assign owner" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">Unassigned</SelectItem>
+                      <SelectItem value="unassigned">Unassigned</SelectItem>
                       {ownerOptions.map((user) => (
                         <SelectItem key={user.id} value={String(user.id)}>
                           {user.name}
@@ -607,7 +614,8 @@ export function CorrectiveActionForm({ options, onCreated }: CorrectiveActionFor
                 </div>
               </div>
             </div>
-          ))}
+            );
+          })}
           <Button type="button" variant="outline" onClick={() => appendStep(DEFAULT_STEP)} className="flex items-center gap-2">
             <PlusCircle className="h-4 w-4" /> Add Step
           </Button>
