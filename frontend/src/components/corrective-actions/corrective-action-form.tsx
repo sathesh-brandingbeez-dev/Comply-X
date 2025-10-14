@@ -134,6 +134,12 @@ export function CorrectiveActionForm({ options, onCreated }: CorrectiveActionFor
     setAiLoading(true)
     setErrorMessage(null)
     try {
+      const sanitizedSteps = (formValues.steps ?? []).map((step) => ({
+        ...step,
+        due_date: step.due_date ? step.due_date : undefined,
+        completion_date: step.completion_date ? step.completion_date : undefined,
+      }))
+
       const payload: CorrectiveActionAIRequest = {
         action_type: formValues.action_type,
         priority: formValues.priority,
@@ -143,7 +149,7 @@ export function CorrectiveActionForm({ options, onCreated }: CorrectiveActionFor
         root_cause: formValues.root_cause,
         impact_assessment: formValues.impact_assessment,
         current_controls: formValues.current_controls,
-        existing_steps: formValues.steps ?? [],
+        existing_steps: sanitizedSteps,
       }
       const response = await api<CorrectiveActionAIResponse>('/corrective-actions/ai/assist', {
         method: 'POST',
@@ -190,19 +196,30 @@ export function CorrectiveActionForm({ options, onCreated }: CorrectiveActionFor
           file_type: undefined,
         }))
 
+        const stepsPayload = values.steps.map((step) => ({
+        ...step,
+        status: step.status ?? 'Not Started',
+        due_date: step.due_date ? step.due_date : undefined,
+        completion_date: step.completion_date ? step.completion_date : undefined,
+      }))
+
+      const metricsPayload = values.success_metrics.map((metric) => ({
+        ...metric,
+        measurement_date: metric.measurement_date ? metric.measurement_date : undefined,
+      }))
+
       const payload = {
         ...values,
         department_ids: selectedDepartments,
         review_team_ids: selectedReviewTeam,
         action_owner_id: Number(values.action_owner_id),
         approver_id: values.approver_id ? Number(values.approver_id) : undefined,
-        budget_required: values.budget_required != null ? Number(values.budget_required) : undefined,
+        budget_required:
+          values.budget_required != null ? Number(values.budget_required) : undefined,
+        evaluation_due_date: values.evaluation_due_date ? values.evaluation_due_date : undefined,
         evidence_files: evidenceFiles,
-        steps: values.steps.map((step) => ({
-          ...step,
-          status: step.status ?? 'Not Started',
-        })),
-        success_metrics: values.success_metrics,
+        steps: stepsPayload,
+        success_metrics: metricsPayload,
       }
 
       await api('/corrective-actions', {
