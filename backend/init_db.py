@@ -695,11 +695,11 @@ default_permissions: List[Dict[str, str]] = [
 
 ROLE_TO_PERMISSION_LEVEL: Dict[UserRole, PermissionLevel] = {
     UserRole.SUPER_ADMIN: PermissionLevel.SUPER_ADMIN,
-    UserRole.ADMIN:       PermissionLevel.ADMIN_ACCESS,
-    UserRole.MANAGER:     PermissionLevel.EDIT_ACCESS,
-    UserRole.AUDITOR:     PermissionLevel.EDIT_ACCESS,   # adjust if read-only desired
-    UserRole.EMPLOYEE:    PermissionLevel.VIEW_ONLY,
-    UserRole.VIEWER:      PermissionLevel.VIEW_ONLY,
+    UserRole.ADMIN:       PermissionLevel.ADMIN,
+    UserRole.MANAGER:     PermissionLevel.REVIEWER,
+    UserRole.AUDITOR:     PermissionLevel.REVIEWER,
+    UserRole.EMPLOYEE:    PermissionLevel.EDITOR,
+    UserRole.VIEWER:      PermissionLevel.READER,
 }
 
 def seed_permissions(session):

@@ -37,7 +37,7 @@ def test_env():
         last_name="User",
         hashed_password="hashed",
         role=UserRole.ADMIN,
-        permission_level=PermissionLevel.VIEW_ONLY,
+        permission_level=PermissionLevel.READER,
     )
     db.add(test_user)
     db.commit()

@@ -25,11 +25,30 @@ class UserRole(str, enum.Enum):
 
 # Enhanced permission levels as requested
 class PermissionLevel(str, enum.Enum):
-    VIEW_ONLY = "view_only"
-    LINK_ACCESS = "link_access" 
-    EDIT_ACCESS = "edit_access"
-    ADMIN_ACCESS = "admin_access"
+    """Five-tier permission model with legacy compatibility."""
+
+    READER = "reader"
+    EDITOR = "editor"
+    REVIEWER = "reviewer"
+    ADMIN = "admin"
     SUPER_ADMIN = "super_admin"
+
+    _LEGACY_MAP = {
+        "view_only": READER,
+        "link_access": READER,
+        "edit_access": EDITOR,
+        "admin_access": ADMIN,
+    }
+
+    @classmethod
+    def _missing_(cls, value: object) -> "PermissionLevel | None":
+        """Gracefully map legacy enum values stored in the database."""
+
+        if isinstance(value, str):
+            mapped = cls._LEGACY_MAP.get(value.lower())
+            if mapped:
+                return mapped
+        return None
 
 class AccessLevel(str, enum.Enum):
     PUBLIC = "public"
@@ -273,6 +292,39 @@ class Department(Base):
     users = relationship("User", foreign_keys="User.department_id", back_populates="user_department")
     created_by = relationship("User", foreign_keys=[created_by_id], back_populates="created_departments")
 
+
+class RegistrationSubmission(Base):
+    __tablename__ = "registration_submissions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    setup_mode = Column(String(20), default="guided", nullable=False)
+
+    # Company overview
+    company_name = Column(String(200), nullable=False)
+    industry = Column(String(100), nullable=False)
+    company_size = Column(String(50), nullable=False)
+    country = Column(String(100), nullable=False)
+    time_zone = Column(String(100), nullable=False)
+    website = Column(String(255), nullable=True)
+
+    # Administrator contact
+    admin_first_name = Column(String(100), nullable=False)
+    admin_last_name = Column(String(100), nullable=False)
+    admin_email = Column(String(255), nullable=False)
+    admin_phone = Column(String(50), nullable=True)
+    admin_job_title = Column(String(100), nullable=False)
+    admin_department = Column(String(100), nullable=False)
+    admin_password_hash = Column(String(255), nullable=False)
+
+    # Structured payloads captured as JSON for downstream workflows
+    ai_recommendations = Column(JSON, nullable=True)
+    department_payload = Column(JSON, nullable=True)
+    framework_payload = Column(JSON, nullable=True)
+    quick_options = Column(JSON, nullable=True)
+    metadata = Column(JSON, nullable=True)
+
+    created_at = Column(DateTime, default=datetime.utcnow)
+
 # Device and MFA Models
 
 class UserDevice(Base):
@@ -334,7 +386,7 @@ class User(Base):
     last_name = Column(String(100), nullable=False)
     hashed_password = Column(String(255), nullable=False)
     role = Column(Enum(UserRole), default=UserRole.EMPLOYEE, nullable=False)
-    permission_level = Column(Enum(PermissionLevel), default=PermissionLevel.VIEW_ONLY, nullable=False)
+    permission_level = Column(Enum(PermissionLevel), default=PermissionLevel.READER, nullable=False)
     is_active = Column(Boolean, default=True)
     is_verified = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.utcnow)
@@ -681,7 +733,7 @@ class CrossDepartmentTag(Base):
     department_id = Column(Integer, ForeignKey("departments.id"), nullable=False)
     
     tag_type = Column(String(50), nullable=False)  # SHARED, REFERENCE, COLLABORATIVE, etc.
-    access_level = Column(Enum(PermissionLevel), default=PermissionLevel.VIEW_ONLY)
+    access_level = Column(Enum(PermissionLevel), default=PermissionLevel.READER)
     
     tagged_by_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     tagged_at = Column(DateTime, default=datetime.utcnow)

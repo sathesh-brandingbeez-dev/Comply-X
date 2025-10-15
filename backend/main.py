@@ -90,6 +90,7 @@ from risk_assessments import router as risk_assessments_router
 from incidents import router as incidents_router
 from corrective_actions import router as corrective_actions_router
 from user_management import router as user_management_router
+from registration import router as registration_router
 # from calendar_module import router as calendar_module_router
 # from app.routes.calendar_ai import router as calendar_ai_router
 from calendar_api import router as calendar_api_router
@@ -118,6 +119,16 @@ try:
     from app.routes.incident_ai import router as incident_ai_router
 except Exception:
     incident_ai_router = None
+
+try:
+    from app.routes.registration_ai import router as registration_ai_router
+except Exception:
+    registration_ai_router = None
+
+try:
+    from app.routes.auth_ai import router as auth_ai_router
+except Exception:
+    auth_ai_router = None
 
 # ⬇️ import your models Base and engine
 from models import Base
@@ -182,6 +193,7 @@ app.include_router(risk_assessments_router,     prefix="/api",                  
 app.include_router(incidents_router,            prefix="/api",                       tags=["incidents"])
 app.include_router(corrective_actions_router,   prefix="/api",                       tags=["corrective-actions"])
 app.include_router(user_management_router,      prefix="/api",                       tags=["user-management"])
+app.include_router(registration_router,          prefix="/api",                       tags=["registration"])
 # app.include_router(calendar_module_router,      prefix="/api",                       tags=["calendar"])
 # app.include_router(calendar_ai_router,          prefix="/api",                       tags=["calendar-ai"])
 app.include_router(calendar_api_router)
@@ -198,6 +210,12 @@ if document_ai_router:
 
 if risk_ai_router:
     app.include_router(risk_ai_router,         prefix="/api",                      tags=["risk-ai"])
+
+if registration_ai_router:
+    app.include_router(registration_ai_router, prefix="/api",                      tags=["registration-ai"])
+
+if auth_ai_router:
+    app.include_router(auth_ai_router,         prefix="/api",                      tags=["auth-ai"])
 
 if incident_ai_router:
     app.include_router(incident_ai_router,     prefix="/api",                      tags=["incidents-ai"])

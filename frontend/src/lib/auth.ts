@@ -49,6 +49,21 @@ export interface AuthResponse {
   user: User
 }
 
+export interface LoginRiskPayload {
+  identifier: string
+  timezone?: string
+  location?: string
+  device_label?: string
+  login_hour?: number
+}
+
+export interface LoginRiskResponse {
+  risk_level: 'low' | 'medium' | 'high'
+  require_mfa: boolean
+  recommended_action: string
+  personalised_message: string
+}
+
 class AuthService {
   private apiClient = axios.create({
     baseURL: API_BASE_URL,
@@ -96,6 +111,11 @@ class AuthService {
     const authData = response.data
     this.setToken(authData.access_token)
     return authData
+  }
+
+  async evaluateLoginRisk(payload: LoginRiskPayload): Promise<LoginRiskResponse> {
+    const response = await this.apiClient.post<LoginRiskResponse>('/auth/ai/evaluate-login', payload)
+    return response.data
   }
 
   async requestPasswordReset(email: string): Promise<void> {
