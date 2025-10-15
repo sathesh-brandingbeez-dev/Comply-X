@@ -28,7 +28,7 @@ def run_migration():
             print("Starting permission_level column migration...")
             
             # Add permission_level column with default value
-            query = "ALTER TABLE users ADD COLUMN permission_level VARCHAR(50) DEFAULT 'view_only';"
+            query = "ALTER TABLE users ADD COLUMN permission_level VARCHAR(50) DEFAULT 'reader';"
             
             try:
                 print(f"Executing: {query}")
@@ -48,7 +48,7 @@ def run_migration():
                 try:
                     constraint_query = """
                     ALTER TABLE users ADD CONSTRAINT permission_level_enum 
-                    CHECK (permission_level IN ('view_only', 'link_access', 'edit_access', 'admin_access', 'super_admin'));
+                    CHECK (permission_level IN ('reader', 'editor', 'reviewer', 'admin', 'super_admin'));
                     """
                     print(f"Adding constraint...")
                     connection.execute(text(constraint_query))

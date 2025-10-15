@@ -7,10 +7,10 @@ export type UserRole =
   | 'viewer'
 
 export type PermissionLevel =
-  | 'view_only'
-  | 'link_access'
-  | 'edit_access'
-  | 'admin_access'
+  | 'reader'
+  | 'editor'
+  | 'reviewer'
+  | 'admin'
   | 'super_admin'
 
 export interface UserManagementSummaryCards {

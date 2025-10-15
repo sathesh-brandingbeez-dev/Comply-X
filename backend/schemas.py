@@ -2679,7 +2679,7 @@ class UserManagementCreate(BaseModel):
     role: UserRole
     password: Optional[str] = None
     department_id: Optional[int] = None
-    permission_level: PermissionLevel = PermissionLevel.VIEW_ONLY
+    permission_level: PermissionLevel = PermissionLevel.READER
     phone: Optional[str] = None
     position: Optional[str] = None
     employee_id: Optional[str] = None

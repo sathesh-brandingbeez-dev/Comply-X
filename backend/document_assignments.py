@@ -87,7 +87,7 @@ class CrossDepartmentTagCreate(BaseModel):
     document_id: int
     department_id: int
     tag_type: str = Field(..., max_length=50)
-    access_level: PermissionLevel = PermissionLevel.VIEW_ONLY
+    access_level: PermissionLevel = PermissionLevel.READER
     notes: Optional[str] = None
 
 class CrossDepartmentTagResponse(BaseModel):
@@ -131,7 +131,7 @@ def check_document_access(db: Session, current_user: User, document_id: int, req
     # For now, skip access check
     
     # Check role-based permissions
-    if current_user.permission_level in [PermissionLevel.ADMIN_ACCESS, PermissionLevel.SUPER_ADMIN]:
+    if current_user.permission_level in [PermissionLevel.ADMIN, PermissionLevel.SUPER_ADMIN]:
         return document
     
     raise HTTPException(
@@ -194,7 +194,7 @@ async def create_document_assignment(
             )
         
         # Check access to confidential departments
-        if assigned_dept.is_confidential and current_user.permission_level not in [PermissionLevel.SUPER_ADMIN, PermissionLevel.ADMIN_ACCESS]:
+        if assigned_dept.is_confidential and current_user.permission_level not in [PermissionLevel.SUPER_ADMIN, PermissionLevel.ADMIN]:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Cannot assign to confidential department"
@@ -278,7 +278,7 @@ async def list_document_assignments(
         query = query.filter(DocumentAssignment.priority == priority)
     
     # Filter by user's access (users can see their own assignments, admins can see all)
-    if current_user.permission_level not in [PermissionLevel.SUPER_ADMIN, PermissionLevel.ADMIN_ACCESS]:
+    if current_user.permission_level not in [PermissionLevel.SUPER_ADMIN, PermissionLevel.ADMIN]:
         query = query.filter(
             or_(
                 DocumentAssignment.assigned_to_user_id == current_user.id,
@@ -393,7 +393,7 @@ async def update_assignment(
         can_update = True
     elif assignment.assigned_to_role == current_user.role:
         can_update = True
-    elif current_user.permission_level in [PermissionLevel.ADMIN_ACCESS, PermissionLevel.SUPER_ADMIN]:
+    elif current_user.permission_level in [PermissionLevel.REVIEWER, PermissionLevel.ADMIN, PermissionLevel.SUPER_ADMIN]:
         can_update = True
     elif assignment.assigned_by_id == current_user.id:
         can_update = True
@@ -532,7 +532,7 @@ async def create_cross_department_tag(
         )
     
     # Check access to confidential departments
-    if department.is_confidential and current_user.permission_level not in [PermissionLevel.SUPER_ADMIN, PermissionLevel.ADMIN_ACCESS]:
+    if department.is_confidential and current_user.permission_level not in [PermissionLevel.SUPER_ADMIN, PermissionLevel.ADMIN]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Cannot tag confidential department"
@@ -570,8 +570,8 @@ async def create_cross_department_tag(
         department_id=tag.department_id,
         permission_level=tag.access_level,
         can_read=True,
-        can_download=(tag.access_level in [PermissionLevel.EDIT_ACCESS, PermissionLevel.ADMIN_ACCESS]),
-        can_edit=(tag.access_level in [PermissionLevel.EDIT_ACCESS, PermissionLevel.ADMIN_ACCESS]),
+        can_download=(tag.access_level in [PermissionLevel.EDITOR, PermissionLevel.REVIEWER, PermissionLevel.ADMIN, PermissionLevel.SUPER_ADMIN]),
+        can_edit=(tag.access_level in [PermissionLevel.EDITOR, PermissionLevel.REVIEWER, PermissionLevel.ADMIN, PermissionLevel.SUPER_ADMIN]),
         granted_by_id=current_user.id
     )
     db.add(doc_access)
@@ -615,7 +615,7 @@ async def list_cross_department_tags(
         query = query.filter(CrossDepartmentTag.tag_type == tag_type)
     
     # Filter by user's department access if not admin
-    if current_user.permission_level not in [PermissionLevel.SUPER_ADMIN, PermissionLevel.ADMIN_ACCESS]:
+    if current_user.permission_level not in [PermissionLevel.SUPER_ADMIN, PermissionLevel.ADMIN]:
         query = query.filter(CrossDepartmentTag.department_id == current_user.department_id)
     
     tags = query.offset(skip).limit(limit).all()
@@ -649,14 +649,14 @@ async def get_assignment_statistics(
     
     # Filter by department if specified and user has access
     if department_id:
-        if current_user.permission_level not in [PermissionLevel.SUPER_ADMIN, PermissionLevel.ADMIN_ACCESS]:
+        if current_user.permission_level not in [PermissionLevel.SUPER_ADMIN, PermissionLevel.ADMIN]:
             if current_user.department_id != department_id:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="Cannot view other department statistics"
                 )
         query = query.filter(DocumentAssignment.assigned_to_department_id == department_id)
-    elif current_user.permission_level not in [PermissionLevel.SUPER_ADMIN, PermissionLevel.ADMIN_ACCESS]:
+    elif current_user.permission_level not in [PermissionLevel.SUPER_ADMIN, PermissionLevel.ADMIN]:
         # Non-admin users see only their department's stats
         query = query.filter(DocumentAssignment.assigned_to_department_id == current_user.department_id)
     
