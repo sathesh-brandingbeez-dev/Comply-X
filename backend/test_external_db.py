@@ -72,7 +72,7 @@ def test_model_operations():
                 last_name="User", 
                 hashed_password="hashed_password_here",
                 role=UserRole.EMPLOYEE,
-                permission_level=PermissionLevel.VIEW_ONLY,
+                permission_level=PermissionLevel.READER,
                 created_at=datetime.utcnow()
             )
             
@@ -104,8 +104,8 @@ def test_enum_types():
         print(f"✅ UserRole enum working - {admin_users} admin users")
         
         # Test PermissionLevel enum  
-        view_only_users = db.query(User).filter(User.permission_level == PermissionLevel.VIEW_ONLY).count()
-        print(f"✅ PermissionLevel enum working - {view_only_users} view-only users")
+        view_only_users = db.query(User).filter(User.permission_level == PermissionLevel.READER).count()
+        print(f"✅ PermissionLevel enum working - {view_only_users} reader users")
         
         db.close()
         return True

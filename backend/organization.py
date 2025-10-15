@@ -134,7 +134,7 @@ class OrganizationHierarchy(BaseModel):
 
 # Permission checking utilities
 def check_admin_access(current_user: User):
-    if current_user.role not in [UserRole.ADMIN, UserRole.MANAGER]:
+    if current_user.permission_level not in [PermissionLevel.ADMIN, PermissionLevel.SUPER_ADMIN]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Insufficient permissions to manage organization structure"
@@ -398,7 +398,7 @@ async def list_departments(
         query = query.filter(Department.site_id == site_id)
     
     # Hide confidential departments unless explicitly requested and user has access
-    if not include_confidential or current_user.permission_level not in [PermissionLevel.SUPER_ADMIN, PermissionLevel.ADMIN_ACCESS]:
+    if not include_confidential or current_user.permission_level not in [PermissionLevel.SUPER_ADMIN, PermissionLevel.ADMIN]:
         query = query.filter(Department.is_confidential == False)
     
     return query.all()
@@ -411,7 +411,7 @@ async def get_organization_hierarchy(
     check_admin_access(current_user)
     
     # Get user's permission level to determine what they can see
-    include_confidential = current_user.permission_level in [PermissionLevel.SUPER_ADMIN, PermissionLevel.ADMIN_ACCESS]
+    include_confidential = current_user.permission_level in [PermissionLevel.SUPER_ADMIN, PermissionLevel.ADMIN]
     
     groups = db.query(Group).filter(Group.is_active == True).all()
     companies = db.query(Company).filter(Company.is_active == True).all()
@@ -436,7 +436,7 @@ class UserAssignmentRequest(BaseModel):
     user_id: int
     department_id: int
     reporting_manager_id: Optional[int] = None
-    permission_level: PermissionLevel = PermissionLevel.VIEW_ONLY
+    permission_level: PermissionLevel = PermissionLevel.READER
 
 @router.post("/users/{user_id}/assign-department", summary="Assign User to Department")
 async def assign_user_to_department(
@@ -467,7 +467,7 @@ async def assign_user_to_department(
         )
     
     # Check access to confidential departments
-    if department.is_confidential and current_user.permission_level not in [PermissionLevel.SUPER_ADMIN, PermissionLevel.ADMIN_ACCESS]:
+    if department.is_confidential and current_user.permission_level not in [PermissionLevel.SUPER_ADMIN, PermissionLevel.ADMIN]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Cannot assign to confidential department"

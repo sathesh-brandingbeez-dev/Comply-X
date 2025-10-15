@@ -93,7 +93,7 @@ export function UserManagementForm({ options, onCreated }: UserManagementFormPro
       role: options?.roles[0] ?? 'employee',
       password: '',
       department_id: undefined,
-      permission_level: options?.permission_levels[0] ?? 'view_only',
+      permission_level: options?.permission_levels[0] ?? 'reader',
       phone: '',
       position: '',
       employee_id: '',

@@ -14,6 +14,7 @@ export interface User {
   first_name: string
   last_name: string
   role: 'admin' | 'manager' | 'auditor' | 'employee' | 'viewer'
+  permission_level: 'reader' | 'editor' | 'reviewer' | 'admin' | 'super_admin'
   is_active: boolean
   is_verified: boolean
   created_at: string
@@ -40,6 +41,7 @@ export interface RegisterData {
   department?: string
   position?: string
   role?: 'admin' | 'manager' | 'auditor' | 'employee' | 'viewer'
+  permission_level?: 'reader' | 'editor' | 'reviewer' | 'admin' | 'super_admin'
 }
 
 export interface AuthResponse {

@@ -69,10 +69,105 @@ class UserBase(BaseModel):
         }
     }
 
+class RegistrationDepartment(BaseModel):
+    name: str
+    description: Optional[str] = None
+    parent_department: Optional[str] = Field(default=None, max_length=100)
+
+
+class RegistrationFramework(BaseModel):
+    key: str
+    label: str
+    category: str
+    estimated_timeline: Optional[str] = None
+
+
+class RegistrationCustomFramework(BaseModel):
+    name: str
+    description: Optional[str] = None
+
+
+class CompanyRegistrationRequest(BaseModel):
+    company_name: str = Field(..., max_length=100)
+    industry: str
+    company_size: str
+    country: str
+    time_zone: str
+    website: Optional[AnyUrl] = None
+
+    admin_first_name: str = Field(..., max_length=50)
+    admin_last_name: str = Field(..., max_length=50)
+    admin_email: EmailStr
+    admin_phone: Optional[str] = None
+    admin_job_title: str = Field(..., max_length=100)
+    admin_department: str = Field(..., max_length=100)
+
+    password: str = Field(..., min_length=8)
+    permission_level: PermissionLevel = PermissionLevel.ADMIN
+    role: UserRole = UserRole.ADMIN
+
+    departments: List[RegistrationDepartment] = Field(default_factory=list)
+    frameworks: List[RegistrationFramework] = Field(default_factory=list)
+    custom_frameworks: List[RegistrationCustomFramework] = Field(default_factory=list)
+    recommended_modules: List[str] = Field(default_factory=list)
+    estimated_setup_time: Optional[str] = None
+
+    quick_setup: bool = False
+    setup_score: Optional[int] = None
+
+
+class QuickCompanyRegistrationRequest(BaseModel):
+    company_name: str = Field(..., max_length=100)
+    industry: str
+    company_size: str
+    country: str
+    website: Optional[AnyUrl] = None
+
+    admin_first_name: str = Field(..., max_length=50)
+    admin_last_name: str = Field(..., max_length=50)
+    admin_email: EmailStr
+    password: str = Field(..., min_length=8)
+
+    use_default_departments: bool = True
+    configure_departments_later: bool = False
+    use_standard_frameworks: bool = True
+    configure_frameworks_later: bool = False
+
+    permission_level: PermissionLevel = PermissionLevel.ADMIN
+    role: UserRole = UserRole.ADMIN
+    setup_score: Optional[int] = None
+
+
+class CompanyRegistrationResponse(BaseModel):
+    registration_id: int
+    status: str
+    recommended_actions: List[str]
+    setup_score: Optional[int] = None
+
+
+class LandingPersonalizationResponse(BaseModel):
+    industry: str
+    headline: str
+    subheadline: str
+    dynamic_examples: List[str]
+    recommended_modules: List[str]
+    testimonial: Optional[str] = None
+    ai_summary: Optional[str] = None
+
+
+class RegistrationSuggestionResponse(BaseModel):
+    industry: str
+    frameworks: List[RegistrationFramework]
+    departments: List[RegistrationDepartment]
+    recommended_modules: List[str]
+    estimated_setup_time: str
+
+
 class UserCreate(UserBase):
     """User creation schema with password and role - Extended for compliance wizard"""
     password: str
     role: UserRole = UserRole.EMPLOYEE
+    permission_level: PermissionLevel = PermissionLevel.READER
     
     # Professional Information
     employee_id: Optional[str] = None
@@ -143,6 +238,7 @@ class UserUpdate(BaseModel):
 class UserResponse(UserBase):
     id: int
     role: UserRole
+    permission_level: PermissionLevel
     is_active: bool
     is_verified: bool
     created_at: datetime
@@ -2679,7 +2775,7 @@ class UserManagementCreate(BaseModel):
     role: UserRole
     password: Optional[str] = None
     department_id: Optional[int] = None
-    permission_level: PermissionLevel = PermissionLevel.VIEW_ONLY
+    permission_level: PermissionLevel = PermissionLevel.READER
     phone: Optional[str] = None
     position: Optional[str] = None
     employee_id: Optional[str] = None

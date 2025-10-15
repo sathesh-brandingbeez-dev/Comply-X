@@ -28,7 +28,7 @@ def run_migration():
             print("Adding correct constraint...")
             constraint_query = """
             ALTER TABLE users ADD CONSTRAINT permission_level_enum 
-            CHECK (permission_level IN ('view_only', 'link_access', 'edit_access', 'admin_access', 'super_admin'));
+            CHECK (permission_level IN ('reader', 'editor', 'reviewer', 'admin', 'super_admin'));
             """
             connection.execute(text(constraint_query))
             connection.commit()

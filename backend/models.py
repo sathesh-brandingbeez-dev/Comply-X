@@ -25,10 +25,10 @@ class UserRole(str, enum.Enum):
 
 # Enhanced permission levels as requested
 class PermissionLevel(str, enum.Enum):
-    VIEW_ONLY = "view_only"
-    LINK_ACCESS = "link_access" 
-    EDIT_ACCESS = "edit_access"
-    ADMIN_ACCESS = "admin_access"
+    READER = "reader"
+    EDITOR = "editor"
+    REVIEWER = "reviewer"
+    ADMIN = "admin"
     SUPER_ADMIN = "super_admin"
 
 class AccessLevel(str, enum.Enum):
@@ -334,7 +334,7 @@ class User(Base):
     last_name = Column(String(100), nullable=False)
     hashed_password = Column(String(255), nullable=False)
     role = Column(Enum(UserRole), default=UserRole.EMPLOYEE, nullable=False)
-    permission_level = Column(Enum(PermissionLevel), default=PermissionLevel.VIEW_ONLY, nullable=False)
+    permission_level = Column(Enum(PermissionLevel), default=PermissionLevel.READER, nullable=False)
     is_active = Column(Boolean, default=True)
     is_verified = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.utcnow)
@@ -380,6 +380,41 @@ class User(Base):
     created_sites = relationship("Site", back_populates="created_by")
     created_departments = relationship("Department", foreign_keys="Department.created_by_id", back_populates="created_by")
     managed_departments = relationship("Department", foreign_keys="Department.manager_id", back_populates="manager")
+
+
+class RegistrationRequest(Base):
+    __tablename__ = "registration_requests"
+
+    id = Column(Integer, primary_key=True, index=True)
+    company_name = Column(String(200), nullable=False)
+    industry = Column(String(100), nullable=False)
+    company_size = Column(String(50), nullable=False)
+    country = Column(String(5), nullable=False)
+    time_zone = Column(String(100), nullable=False)
+    website = Column(String(255), nullable=True)
+
+    admin_first_name = Column(String(100), nullable=False)
+    admin_last_name = Column(String(100), nullable=False)
+    admin_email = Column(String(255), nullable=False)
+    admin_phone = Column(String(50), nullable=True)
+    admin_job_title = Column(String(100), nullable=False)
+    admin_department = Column(String(100), nullable=False)
+    admin_password_hash = Column(String(255), nullable=False)
+
+    permission_level = Column(Enum(PermissionLevel), default=PermissionLevel.ADMIN, nullable=False)
+    role = Column(Enum(UserRole), default=UserRole.ADMIN, nullable=False)
+
+    departments = Column(Text, nullable=True)  # stored as JSON
+    frameworks = Column(Text, nullable=True)  # stored as JSON
+    custom_frameworks = Column(Text, nullable=True)  # stored as JSON
+    ai_recommendations = Column(Text, nullable=True)
+
+    quick_setup = Column(Boolean, default=False)
+    status = Column(String(50), default="pending_review")
+    setup_score = Column(Integer, nullable=True)
+
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 class Permission(Base):
     __tablename__ = "permissions"
@@ -681,7 +716,7 @@ class CrossDepartmentTag(Base):
     department_id = Column(Integer, ForeignKey("departments.id"), nullable=False)
     
     tag_type = Column(String(50), nullable=False)  # SHARED, REFERENCE, COLLABORATIVE, etc.
-    access_level = Column(Enum(PermissionLevel), default=PermissionLevel.VIEW_ONLY)
+    access_level = Column(Enum(PermissionLevel), default=PermissionLevel.READER)
     
     tagged_by_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     tagged_at = Column(DateTime, default=datetime.utcnow)

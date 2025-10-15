@@ -238,6 +238,7 @@ async def register(user_data: UserCreate, db: Session = Depends(get_db)):
         last_name=user_data.last_name,
         hashed_password=hashed_password,
         role=user_data.role,
+        permission_level=user_data.permission_level,
         phone=user_data.phone,
         position=user_data.position,
         employee_id=getattr(user_data, 'employee_id', None),

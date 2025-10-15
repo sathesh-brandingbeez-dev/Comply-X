@@ -129,7 +129,7 @@ def _compute_user_risk_score(user: User) -> float:
             score += 12
         elif days_since > 30:
             score += 6
-    if user.permission_level in {PermissionLevel.ADMIN_ACCESS, PermissionLevel.SUPER_ADMIN}:
+    if user.permission_level in {PermissionLevel.ADMIN, PermissionLevel.SUPER_ADMIN}:
         score += 6
     return round(min(100.0, max(0.0, score)), 1)
 
@@ -359,7 +359,7 @@ def _user_to_detail(
         role=user.role or UserRole.EMPLOYEE,
         department=user.user_department.name if user.user_department else None,
         manager=manager_name,
-        permission_level=user.permission_level or PermissionLevel.VIEW_ONLY,
+        permission_level=user.permission_level or PermissionLevel.READER,
         is_active=bool(user.is_active),
         is_verified=bool(user.is_verified),
         mfa_enabled=bool(user.mfa_enabled),
