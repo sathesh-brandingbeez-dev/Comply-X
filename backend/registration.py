@@ -277,7 +277,7 @@ async def submit_company_registration(
         department_payload=map_departments_for_storage(payload.departments),
         framework_payload=map_frameworks_for_storage(payload.frameworks),
         quick_options=payload.quick_options.model_dump(by_alias=True) if payload.quick_options else None,
-        metadata={
+        submission_metadata={
             "setup_mode": payload.setup_mode,
             "permission_level": PermissionLevel.ADMIN.value,
             "role": UserRole.ADMIN.value,

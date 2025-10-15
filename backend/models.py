@@ -321,7 +321,9 @@ class RegistrationSubmission(Base):
     department_payload = Column(JSON, nullable=True)
     framework_payload = Column(JSON, nullable=True)
     quick_options = Column(JSON, nullable=True)
-    metadata = Column(JSON, nullable=True)
+     # "metadata" is reserved by SQLAlchemy's Declarative base, so use a
+    # descriptive alias for the stored JSON payload.
+    submission_metadata = Column("metadata", JSON, nullable=True)
 
     created_at = Column(DateTime, default=datetime.utcnow)
 
