@@ -113,6 +113,19 @@ class AuthService {
     return authData
   }
 
+  async getOAuthAuthorizationUrl(
+    provider: 'google' | 'microsoft',
+    redirectUri: string
+  ): Promise<string> {
+    const response = await this.apiClient.get<{ authorization_url: string }>(
+      `/auth/oauth/${provider}/authorize`,
+      {
+        params: { redirect_uri: redirectUri },
+      }
+    )
+    return response.data.authorization_url
+  }
+
   async evaluateLoginRisk(payload: LoginRiskPayload): Promise<LoginRiskResponse> {
     const response = await this.apiClient.post<LoginRiskResponse>('/auth/ai/evaluate-login', payload)
     return response.data
@@ -171,6 +184,14 @@ class AuthService {
     if (typeof window !== 'undefined') {
       window.location.href = '/login'
     }
+  }
+
+  persistToken(token: string): void {
+    this.setToken(token)
+  }
+
+  clearStoredToken(): void {
+    this.clearToken()
   }
 
   private setToken(token: string): void {

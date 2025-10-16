@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import * as z from 'zod'
@@ -89,6 +89,17 @@ const TIMEZONES = [
   { value: 'Asia/Kolkata', label: 'India Standard Time (IST)' },
 ]
 
+const DEPARTMENTS = [
+  'Compliance',
+  'Legal',
+  'Risk Management',
+  'Quality Assurance',
+  'Operations',
+  'IT',
+  'Executive',
+  'Other'
+]
+
 export function RegisterForm({ onToggle, onSuccess }: RegisterFormProps) {
   const [currentStep, setCurrentStep] = useState(1)
   const [showPassword, setShowPassword] = useState(false)
@@ -96,6 +107,8 @@ export function RegisterForm({ onToggle, onSuccess }: RegisterFormProps) {
   const [error, setError] = useState('')
   const [success, setSuccess] = useState(false)
   const [selectedAreas, setSelectedAreas] = useState<string[]>([])
+  const [departmentOption, setDepartmentOption] = useState('')
+  const [customDepartment, setCustomDepartment] = useState('')
   const { register: registerUser } = useAuth()
 
   const {
@@ -154,9 +167,50 @@ export function RegisterForm({ onToggle, onSuccess }: RegisterFormProps) {
     const newAreas = selectedAreas.includes(area)
       ? selectedAreas.filter(a => a !== area)
       : [...selectedAreas, area]
-    
+
     setSelectedAreas(newAreas)
     setValue('areas_of_responsibility', newAreas)
+  }
+
+  useEffect(() => {
+    const currentDepartment = getValues('department')
+    if (!currentDepartment) {
+      return
+    }
+
+    if (DEPARTMENTS.includes(currentDepartment)) {
+      setDepartmentOption(currentDepartment)
+      setCustomDepartment('')
+    } else {
+      setDepartmentOption('Other')
+      setCustomDepartment(currentDepartment)
+    }
+  }, [getValues])
+
+  const handleDepartmentSelect = (value: string) => {
+    setDepartmentOption(value)
+
+    if (value === 'Other') {
+      const existing = getValues('department')
+      if (existing && !DEPARTMENTS.includes(existing)) {
+        setCustomDepartment(existing)
+        setValue('department', existing, { shouldValidate: true, shouldDirty: true })
+      } else {
+        setCustomDepartment('')
+        setValue('department', '', { shouldValidate: true, shouldDirty: true })
+      }
+      trigger('department')
+      return
+    }
+
+    setCustomDepartment('')
+    setValue('department', value, { shouldValidate: true, shouldDirty: true })
+    trigger('department')
+  }
+
+  const handleCustomDepartmentChange = (value: string) => {
+    setCustomDepartment(value)
+    setValue('department', value, { shouldValidate: true, shouldDirty: true })
   }
 
   const onSubmit = async (data: RegisterFormData) => {
@@ -358,13 +412,35 @@ export function RegisterForm({ onToggle, onSuccess }: RegisterFormProps) {
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="department">Department *</Label>
-                <Input
-                  id="department"
-                  type="text"
-                  placeholder="IT"
-                  {...register('department')}
-                  className={errors.department ? 'border-red-500' : ''}
-                />
+                <input type="hidden" {...register('department')} />
+                <Select
+                  value={departmentOption}
+                  onValueChange={handleDepartmentSelect}
+                >
+                  <SelectTrigger id="department" className={errors.department ? 'border-red-500' : ''}>
+                    <SelectValue placeholder="Select a department" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {DEPARTMENTS.map(department => (
+                      <SelectItem key={department} value={department}>
+                        {department}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {departmentOption === 'Other' && (
+                  <div className="pt-2">
+                    <Input
+                      id="department_other"
+                      type="text"
+                      placeholder="Enter department"
+                      value={customDepartment}
+                      onChange={event => handleCustomDepartmentChange(event.target.value)}
+                      onBlur={() => trigger('department')}
+                      className={errors.department ? 'border-red-500' : ''}
+                    />
+                  </div>
+                )}
                 {errors.department && (
                   <p className="text-sm text-red-500">{errors.department.message}</p>
                 )}
