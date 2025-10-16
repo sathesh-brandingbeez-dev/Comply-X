@@ -1,9 +1,8 @@
 import axios from 'axios'
 
-const API_BASE_URL =
-  process.env.NODE_ENV === 'development'
-    ? '/api'
-    : process.env.NEXT_PUBLIC_API_BASE || '/api'
+import { getApiBaseUrl } from './api-base'
+
+const API_BASE_URL = getApiBaseUrl()
 
 const client = axios.create({
   baseURL: API_BASE_URL,
