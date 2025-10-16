@@ -1,16 +1,23 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Request
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from sqlalchemy.orm import Session
-from jose import JWTError, jwt
-from passlib.context import CryptContext
-from datetime import datetime, timedelta
-from typing import Optional
+import base64
+import io
 import json
+import logging
+import re
 import secrets
+from datetime import datetime, timedelta
+from threading import Lock
+from typing import Any, Dict, Optional
+from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
+
 import pyotp
 import qrcode
-import io
-import base64
+import requests
+from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi.responses import RedirectResponse
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from jose import JWTError, jwt
+from passlib.context import CryptContext
+from sqlalchemy.orm import Session
 
 from database import get_db
 from models import User, UserRole, PasswordResetToken, MFAMethod
@@ -26,12 +33,104 @@ import os
 SECRET_KEY = os.getenv("SECRET_KEY", "your-secret-key-change-this-in-production")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24  # 24 hours
+GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
+GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
+GOOGLE_REDIRECT_URI = os.getenv("GOOGLE_OAUTH_REDIRECT_URI", "http://localhost:8000/api/auth/oauth/google/callback")
+MICROSOFT_CLIENT_ID = os.getenv("MICROSOFT_CLIENT_ID")
+MICROSOFT_CLIENT_SECRET = os.getenv("MICROSOFT_CLIENT_SECRET")
+MICROSOFT_REDIRECT_URI = os.getenv("MICROSOFT_OAUTH_REDIRECT_URI", "http://localhost:8000/api/auth/oauth/microsoft/callback")
+DEFAULT_OAUTH_REDIRECT = os.getenv("OAUTH_DEFAULT_REDIRECT", os.getenv("FRONTEND_URL", "http://localhost:3000/login"))
+ADDITIONAL_OAUTH_REDIRECTS = [
+    url.strip()
+    for url in os.getenv("OAUTH_ALLOWED_REDIRECTS", "").split(",")
+    if url.strip()
+]
+
+_REDIRECT_CANDIDATES = {
+    candidate for candidate in [DEFAULT_OAUTH_REDIRECT, *ADDITIONAL_OAUTH_REDIRECTS] if candidate
+}
+
+
+def _extract_origin(url: Optional[str]) -> Optional[str]:
+    if not url:
+        return None
+    try:
+        parsed = urlparse(url)
+    except Exception:
+        return None
+    if parsed.scheme and parsed.netloc:
+        return f"{parsed.scheme}://{parsed.netloc}"
+    return None
+
+
+ALLOWED_OAUTH_ORIGINS = {
+    origin for origin in (_extract_origin(url) for url in _REDIRECT_CANDIDATES) if origin
+}
+DEFAULT_OAUTH_ORIGIN = _extract_origin(DEFAULT_OAUTH_REDIRECT)
+OAUTH_STATE_TTL_SECONDS = 600
 
 # Password hashing
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 security = HTTPBearer()
 
 router = APIRouter()
+
+logger = logging.getLogger(__name__)
+
+_oauth_state_store: Dict[str, Dict[str, Any]] = {}
+_oauth_state_lock = Lock()
+
+
+def _cleanup_expired_oauth_states_locked(reference_time: Optional[datetime] = None) -> None:
+    """Remove expired OAuth states from the in-memory store."""
+    now = reference_time or datetime.utcnow()
+    expired_states = [
+        state
+        for state, payload in _oauth_state_store.items()
+        if not isinstance(payload, dict)
+        or not isinstance(payload.get("created_at"), datetime)
+        or now - payload["created_at"] > timedelta(seconds=OAUTH_STATE_TTL_SECONDS)
+    ]
+    for state in expired_states:
+        _oauth_state_store.pop(state, None)
+
+
+def _create_oauth_state(provider: str, redirect_uri: str) -> str:
+    state = secrets.token_urlsafe(32)
+    now = datetime.utcnow()
+    with _oauth_state_lock:
+        _cleanup_expired_oauth_states_locked(now)
+        _oauth_state_store[state] = {
+            "provider": provider,
+            "redirect_uri": redirect_uri,
+            "created_at": now,
+        }
+    return state
+
+
+def _pop_oauth_state(state: Optional[str]) -> Optional[Dict[str, Any]]:
+    if not state:
+        return None
+    with _oauth_state_lock:
+        return _oauth_state_store.pop(state, None)
+
+
+def _resolve_redirect_uri(target: Optional[str]) -> str:
+    if target:
+        origin = _extract_origin(target)
+        if origin and origin in ALLOWED_OAUTH_ORIGINS:
+            return target
+        if target.startswith('/') and DEFAULT_OAUTH_ORIGIN:
+            return f"{DEFAULT_OAUTH_ORIGIN}{target}"
+    return DEFAULT_OAUTH_REDIRECT
+
+
+def _append_query_params(url: str, params: Dict[str, str]) -> str:
+    parsed = urlparse(url)
+    existing_params = dict(parse_qsl(parsed.query))
+    existing_params.update({key: value for key, value in params.items() if value is not None})
+    new_query = urlencode(existing_params)
+    return urlunparse(parsed._replace(query=new_query))
 
 
 def _normalize_role_name(role: str) -> str:
@@ -107,7 +206,7 @@ def get_user_by_email(db: Session, email: str) -> Optional[User]:
 def authenticate_user(db: Session, username: str, password: str) -> Optional[User]:
     # Try to find user by username first
     user = get_user_by_username(db, username)
-    
+
     # If not found by username and it looks like an email, try email lookup
     if not user and "@" in username:
         user = get_user_by_email(db, username)
@@ -118,8 +217,178 @@ def authenticate_user(db: Session, username: str, password: str) -> Optional[Use
         if not user.is_active:
             return None
         return user
-    
+
     return None
+
+
+def _generate_unique_username(email: str, db: Session) -> str:
+    local_part = email.split('@')[0]
+    sanitized = re.sub(r'[^a-zA-Z0-9_.-]', '', local_part) or 'user'
+    base = sanitized[:50]
+    candidate = base
+    suffix = 1
+    while get_user_by_username(db, candidate):
+        candidate = f"{base}{suffix}"
+        suffix += 1
+    return candidate[:100]
+
+
+def _derive_names(profile: Dict[str, Any], email: str) -> tuple[str, str]:
+    first_name = profile.get('given_name') or profile.get('first_name')
+    last_name = profile.get('family_name') or profile.get('last_name')
+    display_name = profile.get('name') or profile.get('displayName')
+
+    if display_name:
+        parts = [part for part in display_name.strip().split() if part]
+        if parts and not first_name:
+            first_name = parts[0]
+        if parts and not last_name and len(parts) > 1:
+            last_name = ' '.join(parts[1:])
+
+    if not first_name:
+        fallback = re.sub(r'[^a-zA-Z]+', ' ', email.split('@')[0]).strip()
+        first_name = fallback.split(' ')[0] if fallback else 'User'
+
+    if not last_name:
+        last_name = 'User'
+
+    return first_name[:100], last_name[:100]
+
+
+def _exchange_code_for_tokens(provider: str, code: str) -> Dict[str, Any]:
+    try:
+        if provider == 'google':
+            if not all([GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI]):
+                raise ValueError('Google OAuth is not configured.')
+            token_url = 'https://oauth2.googleapis.com/token'
+            data = {
+                'code': code,
+                'client_id': GOOGLE_CLIENT_ID,
+                'client_secret': GOOGLE_CLIENT_SECRET,
+                'redirect_uri': GOOGLE_REDIRECT_URI,
+                'grant_type': 'authorization_code',
+            }
+        else:
+            if not all([MICROSOFT_CLIENT_ID, MICROSOFT_CLIENT_SECRET, MICROSOFT_REDIRECT_URI]):
+                raise ValueError('Microsoft OAuth is not configured.')
+            token_url = 'https://login.microsoftonline.com/common/oauth2/v2.0/token'
+            data = {
+                'code': code,
+                'client_id': MICROSOFT_CLIENT_ID,
+                'client_secret': MICROSOFT_CLIENT_SECRET,
+                'redirect_uri': MICROSOFT_REDIRECT_URI,
+                'grant_type': 'authorization_code',
+                'scope': 'openid profile email offline_access User.Read',
+            }
+
+        response = requests.post(token_url, data=data, timeout=10)
+        response.raise_for_status()
+        payload = response.json()
+    except requests.exceptions.RequestException as exc:
+        raise ValueError('Unable to reach the identity provider.') from exc
+
+    if 'error' in payload:
+        description = payload.get('error_description') or payload.get('error')
+        raise ValueError(description or 'Failed to exchange authorization code.')
+
+    return payload
+
+
+def _fetch_user_profile(provider: str, tokens: Dict[str, Any]) -> Dict[str, Any]:
+    access_token = tokens.get('access_token')
+    if not access_token:
+        raise ValueError('Missing access token from provider response.')
+
+    headers = {'Authorization': f'Bearer {access_token}'}
+    if provider == 'google':
+        userinfo_url = 'https://openidconnect.googleapis.com/v1/userinfo'
+    else:
+        userinfo_url = 'https://graph.microsoft.com/v1.0/me'
+
+    try:
+        response = requests.get(userinfo_url, headers=headers, timeout=10)
+        response.raise_for_status()
+        profile = response.json()
+    except requests.exceptions.RequestException as exc:
+        raise ValueError('Unable to retrieve profile information from provider.') from exc
+
+    if provider == 'google':
+        if not profile.get('email'):
+            raise ValueError('Google did not return an email address for this account.')
+    else:
+        email = profile.get('mail') or profile.get('userPrincipalName')
+        if not email:
+            raise ValueError('Microsoft did not return an email address for this account.')
+        profile['email'] = email
+        if profile.get('displayName') and not profile.get('name'):
+            profile['name'] = profile['displayName']
+
+    if provider == 'google' and not profile.get('name'):
+        combined = ' '.join(filter(None, [profile.get('given_name'), profile.get('family_name')])).strip()
+        if combined:
+            profile['name'] = combined
+
+    return profile
+
+
+def _get_or_create_user_from_profile(provider: str, profile: Dict[str, Any], db: Session) -> User:
+    email = profile.get('email')
+    if not email:
+        raise ValueError('Email address is required to sign in.')
+
+    user = get_user_by_email(db, email)
+    avatar_url = profile.get('picture') if provider == 'google' else None
+    first_name, last_name = _derive_names(profile, email)
+
+    if user:
+        updated = False
+        if avatar_url and not user.avatar_url:
+            user.avatar_url = avatar_url
+            updated = True
+        if not user.is_verified:
+            user.is_verified = True
+            updated = True
+        if not user.is_active:
+            user.is_active = True
+            updated = True
+        if not user.first_name and first_name:
+            user.first_name = first_name
+            updated = True
+        if not user.last_name and last_name:
+            user.last_name = last_name
+            updated = True
+
+        if updated:
+            db.commit()
+            db.refresh(user)
+
+        return user
+
+    username = _generate_unique_username(email, db)
+    random_password = secrets.token_urlsafe(32)
+    hashed_password = get_password_hash(random_password)
+
+    new_user = User(
+        email=email,
+        username=username,
+        first_name=first_name,
+        last_name=last_name,
+        hashed_password=hashed_password,
+        role=UserRole.EMPLOYEE,
+        is_active=True,
+        is_verified=True,
+        avatar_url=avatar_url,
+        areas_of_responsibility=json.dumps([]),
+        timezone='UTC',
+        notifications_email=True,
+        notifications_sms=False,
+    )
+
+    db.add(new_user)
+    db.commit()
+    db.refresh(new_user)
+
+    return new_user
 
 async def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(security),
@@ -207,7 +476,109 @@ def generate_qr_code(secret: str, user_email: str) -> str:
     img_base64 = base64.b64encode(buffer.getvalue()).decode()
     return f"data:image/png;base64,{img_base64}"
 
-@router.post("/register", 
+@router.get("/oauth/{provider}/authorize")
+async def oauth_authorize(provider: str, redirect_uri: Optional[str] = None):
+    provider_normalized = provider.lower()
+    if provider_normalized not in {"google", "microsoft"}:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unsupported provider")
+
+    resolved_redirect = _resolve_redirect_uri(redirect_uri)
+
+    if provider_normalized == "google":
+        if not all([GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI]):
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Google OAuth is not configured")
+        state = _create_oauth_state(provider_normalized, resolved_redirect)
+        params = {
+            "client_id": GOOGLE_CLIENT_ID,
+            "response_type": "code",
+            "redirect_uri": GOOGLE_REDIRECT_URI,
+            "scope": "openid email profile",
+            "state": state,
+            "access_type": "offline",
+            "prompt": "select_account",
+            "include_granted_scopes": "true",
+        }
+        authorization_url = f"https://accounts.google.com/o/oauth2/v2/auth?{urlencode(params)}"
+    else:
+        if not all([MICROSOFT_CLIENT_ID, MICROSOFT_CLIENT_SECRET, MICROSOFT_REDIRECT_URI]):
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Microsoft OAuth is not configured")
+        state = _create_oauth_state(provider_normalized, resolved_redirect)
+        params = {
+            "client_id": MICROSOFT_CLIENT_ID,
+            "response_type": "code",
+            "redirect_uri": MICROSOFT_REDIRECT_URI,
+            "response_mode": "query",
+            "scope": "openid profile email offline_access User.Read",
+            "state": state,
+            "prompt": "select_account",
+        }
+        authorization_url = f"https://login.microsoftonline.com/common/oauth2/v2.0/authorize?{urlencode(params)}"
+
+    return {"authorization_url": authorization_url}
+
+
+@router.get("/oauth/{provider}/callback")
+async def oauth_callback(
+    provider: str,
+    code: Optional[str] = None,
+    state: Optional[str] = None,
+    error: Optional[str] = None,
+    error_description: Optional[str] = None,
+    db: Session = Depends(get_db),
+):
+    provider_normalized = provider.lower()
+    if provider_normalized not in {"google", "microsoft"}:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unsupported provider")
+
+    state_payload = _pop_oauth_state(state)
+    frontend_redirect = _resolve_redirect_uri(state_payload.get("redirect_uri") if state_payload else None)
+
+    if not state_payload:
+        message = "The sign-in session has expired. Please start again."
+        return RedirectResponse(url=_append_query_params(frontend_redirect, {"oauth_error": message}))
+
+    if state_payload.get("provider") != provider_normalized:
+        message = "The sign-in request is invalid. Please try again."
+        return RedirectResponse(url=_append_query_params(frontend_redirect, {"oauth_error": message}))
+
+    if error or error_description:
+        message = error_description or error or "Authentication was cancelled."
+        return RedirectResponse(url=_append_query_params(frontend_redirect, {"oauth_error": message}))
+
+    if not code:
+        return RedirectResponse(url=_append_query_params(frontend_redirect, {"oauth_error": "Missing authorization code."}))
+
+    try:
+        token_payload = _exchange_code_for_tokens(provider_normalized, code)
+        profile = _fetch_user_profile(provider_normalized, token_payload)
+        user = _get_or_create_user_from_profile(provider_normalized, profile, db)
+        user.last_login = datetime.utcnow()
+        db.commit()
+        db.refresh(user)
+
+        access_token = create_access_token(
+            data={"sub": user.username},
+            expires_delta=timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES),
+        )
+
+        redirect_url = _append_query_params(frontend_redirect, {"oauth_token": access_token})
+        return RedirectResponse(url=redirect_url)
+    except ValueError as exc:
+        db.rollback()
+        logger.warning("OAuth callback failed for provider %s: %s", provider_normalized, exc)
+        return RedirectResponse(url=_append_query_params(frontend_redirect, {"oauth_error": str(exc)}))
+    except Exception as exc:  # noqa: BLE001
+        db.rollback()
+        logger.exception("Unexpected error during OAuth callback for provider %s", provider_normalized)
+        return RedirectResponse(
+            url=_append_query_params(
+                frontend_redirect,
+                {"oauth_error": "Unexpected authentication error. Please try again."},
+            )
+        )
+
+
+@router.post("/register",
              response_model=UserResponse,
              summary="Register New User",
              description="Create a new user account with the provided information. Email and username must be unique.",

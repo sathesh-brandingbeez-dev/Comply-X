@@ -10,6 +10,7 @@ interface AuthContextType {
   register: (userData: RegisterData) => Promise<void>
   logout: () => void
   isAuthenticated: boolean
+  completeOAuthLogin: (token: string) => Promise<void>
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
@@ -77,6 +78,21 @@ export function AuthProvider({ children }: AuthProviderProps) {
     authService.logout()
   }
 
+  const completeOAuthLogin = async (token: string) => {
+    setLoading(true)
+    try {
+      authService.persistToken(token)
+      const currentUser = await authService.getCurrentUser()
+      setUser(currentUser)
+    } catch (error) {
+      authService.clearStoredToken()
+      setUser(null)
+      throw error
+    } finally {
+      setLoading(false)
+    }
+  }
+
   const value: AuthContextType = {
     user,
     loading,
@@ -84,6 +100,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     register,
     logout,
     isAuthenticated: !!user,
+    completeOAuthLogin,
   }
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

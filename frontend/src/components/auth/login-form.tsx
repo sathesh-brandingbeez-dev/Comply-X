@@ -13,6 +13,11 @@ import { Label } from '@/components/ui/label'
 import { useAuth } from '@/contexts/auth-context'
 import { authService, LoginRiskResponse } from '@/lib/auth'
 
+interface LoginFormProps {
+  initialError?: string | null
+  onClearInitialError?: () => void
+}
+
 const loginSchema = z.object({
   identifier: z
     .string()
@@ -28,7 +33,7 @@ const loginSchema = z.object({
 type LoginFormData = z.infer<typeof loginSchema>
 type RiskLevel = 'low' | 'medium' | 'high'
 
-export function LoginForm() {
+export function LoginForm({ initialError, onClearInitialError }: LoginFormProps) {
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState('')
   const [rememberMe, setRememberMe] = useState(false)
@@ -36,6 +41,7 @@ export function LoginForm() {
   const [riskLevel, setRiskLevel] = useState<RiskLevel>('low')
   const [mfaRequired, setMfaRequired] = useState(false)
   const [mfaCode, setMfaCode] = useState('')
+  const [socialLoading, setSocialLoading] = useState<'google' | 'microsoft' | null>(null)
   const { login } = useAuth()
   const router = useRouter()
 
@@ -48,6 +54,13 @@ export function LoginForm() {
   } = useForm<LoginFormData>({
     resolver: zodResolver(loginSchema),
   })
+
+  useEffect(() => {
+    if (initialError) {
+      setError(initialError)
+      onClearInitialError?.()
+    }
+  }, [initialError, onClearInitialError])
 
   useEffect(() => {
     const stored = typeof window !== 'undefined' ? localStorage.getItem('cx_remembered_identifier') : null
@@ -124,6 +137,25 @@ export function LoginForm() {
       console.log('Login error:', err)
       const errorMessage = err.response?.data?.detail || err.message || 'Login failed. Please try again.'
       setError(errorMessage)
+    }
+  }
+
+  const handleSocialLogin = async (provider: 'google' | 'microsoft') => {
+    if (typeof window === 'undefined') {
+      return
+    }
+
+    try {
+      setError('')
+      setSocialLoading(provider)
+      const redirectUri = `${window.location.origin}/login`
+      const authorizationUrl = await authService.getOAuthAuthorizationUrl(provider, redirectUri)
+      window.location.href = authorizationUrl
+    } catch (err: any) {
+      console.error(`Failed to start ${provider} sign-in`, err)
+      const providerLabel = provider === 'google' ? 'Google' : 'Microsoft'
+      setError(`Unable to start ${providerLabel} sign-in. Please try again.`)
+      setSocialLoading(null)
     }
   }
 
@@ -219,11 +251,37 @@ export function LoginForm() {
               <div className="absolute inset-x-0 top-1/2 -z-10 h-px bg-border" aria-hidden="true" />
             </div>
             <div className="grid gap-3">
-              <Button type="button" variant="outline" className="w-full">
-                Continue with Google
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full"
+                onClick={() => handleSocialLogin('google')}
+                disabled={isSubmitting || socialLoading !== null}
+              >
+                {socialLoading === 'google' ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Redirecting...
+                  </>
+                ) : (
+                  'Continue with Google'
+                )}
               </Button>
-              <Button type="button" variant="outline" className="w-full">
-                Continue with Microsoft
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full"
+                onClick={() => handleSocialLogin('microsoft')}
+                disabled={isSubmitting || socialLoading !== null}
+              >
+                {socialLoading === 'microsoft' ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Redirecting...
+                  </>
+                ) : (
+                  'Continue with Microsoft'
+                )}
               </Button>
             </div>
           </div>
