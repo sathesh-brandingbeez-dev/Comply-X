@@ -4,9 +4,10 @@ from database import engine
 # Normalize legacy/uppercase values to the correct enum strings
 # Maps both role-like and legacy values to the new PermissionLevel values
 UPDATES = [
-    ("view_only",   ("VIEW_ONLY","READER")),
-    ("edit_access", ("EDITOR","REVIEWER")),
-    ("admin_access",("ADMIN",)),
+    ("reader", ("VIEW_ONLY", "READER", "view_only", "link_access", "LINK_ACCESS")),
+    ("editor", ("EDITOR", "edit_access", "EDIT_ACCESS")),
+    ("reviewer", ("REVIEWER",)),
+    ("admin", ("ADMIN", "admin_access", "ADMIN_ACCESS")),
     ("super_admin", ("SUPER_ADMIN",)),
 ]
 

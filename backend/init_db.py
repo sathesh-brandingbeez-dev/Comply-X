@@ -648,7 +648,7 @@ def ensure_role_permissions_permission_level():
                 conn.execute(
                     text(
                         "ALTER TABLE role_permissions "
-                        "ADD COLUMN permission_level VARCHAR(50) NOT NULL DEFAULT 'view_only'"
+                        "ADD COLUMN permission_level VARCHAR(50) NOT NULL DEFAULT 'reader'"
                     )
                 )
                 log.info("✅ Column added.")
@@ -663,7 +663,7 @@ def ensure_role_permissions_permission_level():
             if not exists:
                 log.info("Adding missing column role_permissions.permission_level...")
                 conn.execute(text(
-                    "ALTER TABLE role_permissions ADD COLUMN permission_level VARCHAR(50) NOT NULL DEFAULT 'view_only'"
+                    "ALTER TABLE role_permissions ADD COLUMN permission_level VARCHAR(50) NOT NULL DEFAULT 'reader'"
                 ))
                 log.info("✅ Column added.")
 
