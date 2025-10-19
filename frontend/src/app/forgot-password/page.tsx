@@ -10,8 +10,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { ArrowLeft, Mail, CheckCircle, AlertCircle } from 'lucide-react';
 import Link from 'next/link';
 import axios from 'axios';
-
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'https://comply-x.onrender.com';
+import { buildApiUrl } from '@/lib/api';
 
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState('');
@@ -26,7 +25,7 @@ export default function ForgotPasswordPage() {
     setError('');
 
     try {
-      await axios.post(`${API_BASE_URL}/api/auth/password-reset/request`, {
+      await axios.post(buildApiUrl('/auth/password-reset/request'), {
         email: email.trim()
       });
 

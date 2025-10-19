@@ -17,15 +17,16 @@ import {
 } from '@/components/ui/select'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { 
-  Upload, 
-  FileText, 
-  Loader2, 
-  X, 
+import {
+  Upload,
+  FileText,
+  Loader2,
+  X,
   CheckCircle,
   AlertCircle
 } from 'lucide-react'
 import { StatusWorkflowHelp } from './status-workflow-help'
+import { buildApiUrl as buildBackendUrl } from '@/lib/api'
 
 interface DuplicateMatch {
   id: number
@@ -69,14 +70,6 @@ export function DocumentUpload({ onUploadSuccess }: DocumentUploadProps) {
   const [aiConfidence, setAiConfidence] = useState<number | null>(null)
   const [aiSummary, setAiSummary] = useState<string | null>(null)
   const [duplicateMatches, setDuplicateMatches] = useState<DuplicateMatch[]>([])
-  const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, '')
-
-  const buildApiUrl = (path: string) => {
-    if (!path.startsWith('/')) {
-      return API_BASE_URL ? `${API_BASE_URL}/${path}` : `/${path}`
-    }
-    return API_BASE_URL ? `${API_BASE_URL}${path}` : path
-  }
 
   const {
     register,
@@ -206,7 +199,7 @@ export function DocumentUpload({ onUploadSuccess }: DocumentUploadProps) {
     try {
       const textPreview = await readTextPreview(selectedFile)
 
-      const categorizeResponse = await fetch(buildApiUrl('/api/documents/ai/categorize'), {
+      const categorizeResponse = await fetch(buildBackendUrl('/documents/ai/categorize'), {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -242,7 +235,7 @@ export function DocumentUpload({ onUploadSuccess }: DocumentUploadProps) {
       }
 
       const fileHash = await computeFileHash(selectedFile)
-      const duplicateResponse = await fetch(buildApiUrl('/api/documents/ai/duplicates'), {
+      const duplicateResponse = await fetch(buildBackendUrl('/documents/ai/duplicates'), {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -318,7 +311,7 @@ export function DocumentUpload({ onUploadSuccess }: DocumentUploadProps) {
         return
       }
       
-      const response = await fetch(buildApiUrl('/api/documents/upload'), {
+      const response = await fetch(buildBackendUrl('/documents/upload'), {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`
