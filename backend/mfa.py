@@ -69,6 +69,20 @@ class SMSMFARequest(BaseModel):
 class EmailMFARequest(BaseModel):
     email_address: str = Field(..., max_length=255)
 
+
+class EmailMFALoginChallengeRequest(BaseModel):
+    """Request payload for sending a login verification code via email."""
+
+    identifier: str = Field(..., max_length=255, description="Username or email associated with the account")
+
+
+class EmailMFALoginChallengeResponse(BaseModel):
+    """Response returned after attempting to send an email MFA challenge."""
+
+    sent: bool = Field(..., description="Whether an email verification code was dispatched")
+    method: str = Field(default="email", description="Delivery channel used for the MFA challenge")
+    expires_in: Optional[int] = Field(default=None, description="Seconds until the verification code expires")
+
 # Utility functions
 
 def generate_device_id(request: Request, device_info: DeviceRegistrationRequest) -> str:
@@ -94,9 +108,82 @@ async def send_verification_email(email: str, code: str, user_name: Optional[str
 
 def send_verification_sms(phone: str, code: str):
     """Send verification SMS with MFA code"""
-    # This is a placeholder - implement actual SMS sending  
+    # This is a placeholder - implement actual SMS sending
     print(f"Sending MFA code {code} to phone {phone}")
     # In production, integrate with Twilio, AWS SNS, or similar service
+
+
+@router.post(
+    "/email/send-code",
+    response_model=EmailMFALoginChallengeResponse,
+    summary="Send Email MFA login code",
+    description="Generate and send a verification code to the configured MFA email address for a login attempt."
+)
+async def send_email_login_code(
+    challenge: EmailMFALoginChallengeRequest,
+    db: Session = Depends(get_db)
+) -> EmailMFALoginChallengeResponse:
+    """Send an MFA verification code via email when logging in without an authenticated session."""
+
+    identifier = challenge.identifier.strip()
+    if not identifier:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="A username or email address is required to send a verification code.",
+        )
+
+    # Attempt to locate the user by username first, then by email if an @ is present.
+    user: Optional[User] = None
+    if "@" in identifier:
+        user = db.query(User).filter(User.email == identifier).first()
+    if not user:
+        user = db.query(User).filter(User.username == identifier).first()
+
+    if not user or not user.is_active:
+        # Avoid disclosing whether an account exists – respond as if the email was handled.
+        return EmailMFALoginChallengeResponse(sent=False, method="email")
+
+    email_method = db.query(MFAMethod).filter(
+        MFAMethod.user_id == user.id,
+        MFAMethod.method_type == "email",
+        MFAMethod.is_enabled == True,
+    ).first()
+
+    if not email_method:
+        return EmailMFALoginChallengeResponse(sent=False, method="email")
+
+    destination_email = email_method.email_address or user.email
+    if not destination_email:
+        return EmailMFALoginChallengeResponse(sent=False, method="email")
+
+    verification_code = secrets.randbelow(999999)
+    verification_code_str = f"{verification_code:06d}"
+    expires_at = datetime.utcnow() + timedelta(minutes=10)
+    salt = secrets.token_hex(16)
+    hashed_code = hashlib.sha256(f"{verification_code_str}{salt}".encode()).hexdigest()
+
+    metadata = json.dumps(
+        {
+            "pending_login_code": hashed_code,
+            "salt": salt,
+            "expires_at": expires_at.isoformat(),
+        }
+    )
+
+    user_name = f"{user.first_name or ''} {user.last_name or ''}".strip() or None
+    email_sent = await send_verification_email(destination_email, verification_code_str, user_name=user_name)
+
+    if not email_sent:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to send verification email. Please try again later.",
+        )
+
+    email_method.backup_codes = metadata
+    email_method.last_used_at = datetime.utcnow()
+    db.commit()
+
+    return EmailMFALoginChallengeResponse(sent=True, method="email", expires_in=int((expires_at - datetime.utcnow()).total_seconds()))
 
 def generate_qr_code(secret: str, user_email: str, issuer: str = "Comply-X") -> str:
     """Generate QR code for TOTP setup"""

@@ -61,6 +61,12 @@ export interface LoginRiskResponse {
   personalised_message: string
 }
 
+export interface EmailMfaChallengeResponse {
+  sent: boolean
+  method: 'email'
+  expires_in?: number
+}
+
 class AuthService {
   private apiClient = axios.create({
     baseURL: API_BASE_URL,
@@ -125,6 +131,11 @@ class AuthService {
 
   async evaluateLoginRisk(payload: LoginRiskPayload): Promise<LoginRiskResponse> {
     const response = await this.apiClient.post<LoginRiskResponse>('/auth/ai/evaluate-login', payload)
+    return response.data
+  }
+
+  async requestEmailMfaCode(identifier: string): Promise<EmailMfaChallengeResponse> {
+    const response = await this.apiClient.post<EmailMfaChallengeResponse>('/mfa/email/send-code', { identifier })
     return response.data
   }
 
