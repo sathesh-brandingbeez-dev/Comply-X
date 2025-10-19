@@ -72,7 +72,7 @@ LEGACY_PERMISSION_LEVEL_MAP.update(
 
 
 def _permission_level_values(enum_cls: type[PermissionLevel] | PermissionLevel) -> list[str]:
-    """Return all accepted database values for :class:`PermissionLevel`."""
+    """Return the canonical database values for :class:`PermissionLevel`."""
 
     actual_enum: EnumMeta | type[PermissionLevel]
     if isinstance(enum_cls, EnumMeta):
@@ -82,7 +82,7 @@ def _permission_level_values(enum_cls: type[PermissionLevel] | PermissionLevel) 
 
     base_values = [member.value for member in actual_enum]
 
-    # Preserve order while removing duplicates
+    # Preserve order while removing duplicates.
     seen: set[str] = set()
     ordered_values: list[str] = []
     for candidate in base_values:
@@ -106,13 +106,27 @@ def PermissionLevelEnum(**kwargs) -> Enum:
     )
 
     object_lookup = getattr(sa_enum, "_object_lookup", None)
+    if not isinstance(object_lookup, dict):
+        object_lookup = {}
+        setattr(sa_enum, "_object_lookup", object_lookup)
+    object_lookup.setdefault(None, None)
+
+    valid_lookup = getattr(sa_enum, "_valid_lookup", None)
+    if not isinstance(valid_lookup, dict):
+        valid_lookup = {}
+        setattr(sa_enum, "_valid_lookup", valid_lookup)
+    valid_lookup.setdefault(None, None)
+
     extended_values = list(getattr(sa_enum, "enums", []))
 
     def _register(value: str, member: PermissionLevel) -> None:
         if value not in extended_values:
             extended_values.append(value)
         if isinstance(object_lookup, dict):
-            object_lookup.setdefault(value, member)
+            object_lookup[value] = member
+        if isinstance(valid_lookup, dict):
+            valid_lookup.setdefault(member, value)
+            valid_lookup[value] = value
 
     for member in PermissionLevel:
         _register(member.name, member)
