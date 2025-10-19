@@ -1,4 +1,5 @@
 import base64
+import hashlib
 import io
 import json
 import logging
@@ -934,45 +935,83 @@ async def mfa_login(
             detail="MFA is not enabled for this account"
         )
     
-    # Get TOTP method
+    # Load available MFA methods
     totp_method = db.query(MFAMethod).filter(
         MFAMethod.user_id == user.id,
         MFAMethod.method_type == "totp",
         MFAMethod.is_enabled == True
     ).first()
-    
-    if not totp_method:
+
+    email_method = db.query(MFAMethod).filter(
+        MFAMethod.user_id == user.id,
+        MFAMethod.method_type == "email",
+        MFAMethod.is_enabled == True
+    ).first()
+
+    if not totp_method and not email_method:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="MFA configuration error"
         )
-    
-    # Verify MFA code (try TOTP first, then backup codes)
+
+    # Verify MFA code (try TOTP first, then email challenge)
     mfa_valid = False
-    
-    # Try TOTP
-    if verify_totp(totp_method.secret_key, login_data.mfa_code):
-        mfa_valid = True
-    else:
-        # Try backup codes
-        if totp_method.backup_codes:
+    method_used: Optional[MFAMethod] = None
+
+    if totp_method and login_data.mfa_code:
+        if verify_totp(totp_method.secret_key, login_data.mfa_code):
+            mfa_valid = True
+            method_used = totp_method
+        elif totp_method.backup_codes:
             backup_codes = json.loads(totp_method.backup_codes)
             if login_data.mfa_code.upper() in backup_codes:
                 mfa_valid = True
-                # Remove used backup code
+                method_used = totp_method
                 backup_codes.remove(login_data.mfa_code.upper())
                 totp_method.backup_codes = json.dumps(backup_codes)
-                db.commit()
-    
+
+    if not mfa_valid and email_method and login_data.mfa_code:
+        metadata = None
+        if email_method.backup_codes:
+            try:
+                metadata = json.loads(email_method.backup_codes)
+            except (TypeError, json.JSONDecodeError):
+                metadata = None
+
+        if metadata:
+            hashed_code = metadata.get("pending_login_code")
+            salt = metadata.get("salt")
+            expires_at_raw = metadata.get("expires_at")
+
+            if hashed_code and salt:
+                computed_hash = hashlib.sha256(f"{login_data.mfa_code}{salt}".encode()).hexdigest()
+                if computed_hash == hashed_code:
+                    expires_at = None
+                    if expires_at_raw:
+                        try:
+                            expires_at = datetime.fromisoformat(expires_at_raw)
+                        except ValueError:
+                            expires_at = None
+
+                    if not expires_at or datetime.utcnow() <= expires_at:
+                        mfa_valid = True
+                        method_used = email_method
+                        email_method.backup_codes = None
+                    else:
+                        # Expired codes should be cleared so the user can request a new one
+                        email_method.backup_codes = None
+
     if not mfa_valid:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid MFA code"
         )
-    
-    # Update last login
+
+    # Update last login and persist method metadata
     user.last_login = datetime.utcnow()
-    totp_method.last_used_at = datetime.utcnow()
+    if method_used:
+        method_used.last_used_at = datetime.utcnow()
+
     db.commit()
     
     # Create token

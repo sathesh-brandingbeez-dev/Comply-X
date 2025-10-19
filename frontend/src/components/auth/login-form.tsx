@@ -41,6 +41,7 @@ export function LoginForm({ initialError, onClearInitialError }: LoginFormProps)
   const [riskLevel, setRiskLevel] = useState<RiskLevel>('low')
   const [mfaRequired, setMfaRequired] = useState(false)
   const [mfaCode, setMfaCode] = useState('')
+  const [mfaCodeRequested, setMfaCodeRequested] = useState(false)
   const [socialLoading, setSocialLoading] = useState<'google' | 'microsoft' | null>(null)
   const { login } = useAuth()
   const router = useRouter()
@@ -110,12 +111,26 @@ export function LoginForm({ initialError, onClearInitialError }: LoginFormProps)
       setMfaRequired(riskAssessment.require_mfa)
 
       if (riskAssessment.require_mfa && mfaCode.trim().length === 0) {
+        if (!mfaCodeRequested) {
+          try {
+            const challenge = await authService.requestEmailMfaCode(data.identifier)
+            if (challenge.sent) {
+              setAiMessage('We\'ve emailed you a verification code. It will expire in 10 minutes.')
+            }
+            setMfaCodeRequested(true)
+          } catch (challengeError: any) {
+            console.error('Failed to send MFA challenge', challengeError)
+            const detail = challengeError.response?.data?.detail || 'Unable to send verification code. Please try again.'
+            setError(detail)
+          }
+        }
         setMfaRequired(true)
         return
       }
 
       if (!riskAssessment.require_mfa) {
         setMfaCode('')
+        setMfaCodeRequested(false)
       }
 
       const loginData = {
@@ -125,6 +140,8 @@ export function LoginForm({ initialError, onClearInitialError }: LoginFormProps)
       }
 
       await login(loginData)
+
+      setMfaCodeRequested(false)
 
       if (rememberMe) {
         localStorage.setItem('cx_remembered_identifier', data.identifier)
