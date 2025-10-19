@@ -1,5 +1,19 @@
 from __future__ import annotations
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, Text, Enum, Float, Index, Date, JSON, Table
+from sqlalchemy import (
+    Column,
+    Integer,
+    String,
+    Boolean,
+    DateTime,
+    ForeignKey,
+    Text,
+    Enum,
+    Float,
+    Index,
+    Date,
+    JSON,
+    Table,
+)
 from sqlalchemy.orm import relationship, declarative_base
 from database import Base
 from datetime import datetime
@@ -49,6 +63,39 @@ class PermissionLevel(str, enum.Enum):
             if mapped:
                 return mapped
         return None
+
+
+def _permission_level_values(enum_cls: type[PermissionLevel]) -> list[str]:
+    """Return all accepted database values for :class:`PermissionLevel`."""
+
+    base_values = [member.value for member in enum_cls]
+    member_names = [member.name for member in enum_cls]
+
+    legacy_aliases = list(enum_cls._LEGACY_MAP.keys())
+    legacy_aliases += [alias.upper() for alias in enum_cls._LEGACY_MAP.keys()]
+
+    # Preserve order while removing duplicates
+    seen: set[str] = set()
+    ordered_values: list[str] = []
+    for candidate in [*base_values, *member_names, *legacy_aliases]:
+        if candidate not in seen:
+            ordered_values.append(candidate)
+            seen.add(candidate)
+
+    return ordered_values
+
+
+def PermissionLevelEnum(**kwargs) -> Enum:
+    """Factory for SQLAlchemy ``Enum`` that understands legacy values."""
+
+    return Enum(
+        PermissionLevel,
+        values_callable=_permission_level_values,
+        native_enum=False,
+        validate_strings=True,
+        name="permissionlevel",
+        **kwargs,
+    )
 
 class AccessLevel(str, enum.Enum):
     PUBLIC = "public"
@@ -388,7 +435,9 @@ class User(Base):
     last_name = Column(String(100), nullable=False)
     hashed_password = Column(String(255), nullable=False)
     role = Column(Enum(UserRole), default=UserRole.EMPLOYEE, nullable=False)
-    permission_level = Column(Enum(PermissionLevel), default=PermissionLevel.READER, nullable=False)
+    permission_level = Column(
+        PermissionLevelEnum(), default=PermissionLevel.READER, nullable=False
+    )
     is_active = Column(Boolean, default=True)
     is_verified = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.utcnow)
@@ -449,7 +498,7 @@ class RolePermission(Base):
     
     id = Column(Integer, primary_key=True, index=True)
     role = Column(Enum(UserRole), nullable=False)
-    permission_level = Column(Enum(PermissionLevel), nullable=False)
+    permission_level = Column(PermissionLevelEnum(), nullable=False)
     permission_id = Column(Integer, ForeignKey("permissions.id"), nullable=False)
     
     permission = relationship("Permission")
@@ -458,7 +507,7 @@ class PermissionLevelAccess(Base):
     __tablename__ = "permission_level_access"
     
     id = Column(Integer, primary_key=True, index=True)
-    permission_level = Column(Enum(PermissionLevel), nullable=False, index=True)
+    permission_level = Column(PermissionLevelEnum(), nullable=False, index=True)
     module = Column(String(50), nullable=False)
     action = Column(String(50), nullable=False)
     allowed = Column(Boolean, default=False)
@@ -586,7 +635,7 @@ class DocumentAccess(Base):
     user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     role = Column(Enum(UserRole), nullable=True)
     department_id = Column(Integer, ForeignKey("departments.id"), nullable=True)
-    permission_level = Column(Enum(PermissionLevel), nullable=True)
+    permission_level = Column(PermissionLevelEnum(), nullable=True)
     
     # Permissions
     can_read = Column(Boolean, default=True)
@@ -735,7 +784,7 @@ class CrossDepartmentTag(Base):
     department_id = Column(Integer, ForeignKey("departments.id"), nullable=False)
     
     tag_type = Column(String(50), nullable=False)  # SHARED, REFERENCE, COLLABORATIVE, etc.
-    access_level = Column(Enum(PermissionLevel), default=PermissionLevel.READER)
+    access_level = Column(PermissionLevelEnum(), default=PermissionLevel.READER)
     
     tagged_by_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     tagged_at = Column(DateTime, default=datetime.utcnow)
