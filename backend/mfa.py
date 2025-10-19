@@ -171,13 +171,15 @@ async def send_email_login_code(
     )
 
     user_name = f"{user.first_name or ''} {user.last_name or ''}".strip() or None
-    email_sent = await send_verification_email(destination_email, verification_code_str, user_name=user_name)
+    email_sent = await send_verification_email(
+        destination_email,
+        verification_code_str,
+        user_name=user_name,
+    )
 
     if not email_sent:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to send verification email. Please try again later.",
-        )
+        # Gracefully handle environments where email isn't configured yet.
+        return EmailMFALoginChallengeResponse(sent=False, method="email")
 
     email_method.backup_codes = metadata
     email_method.last_used_at = datetime.utcnow()
