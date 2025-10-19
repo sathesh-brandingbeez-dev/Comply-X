@@ -13,9 +13,8 @@ import base64
 import secrets
 import hashlib
 import json
-import smtplib
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
+
+from email_service import email_service
 
 router = APIRouter()
 
@@ -85,11 +84,13 @@ def generate_backup_codes(count: int = 8) -> List[str]:
     """Generate backup codes for account recovery"""
     return [secrets.token_hex(4).upper() for _ in range(count)]
 
-def send_verification_email(email: str, code: str):
+async def send_verification_email(email: str, code: str, user_name: Optional[str] = None) -> bool:
     """Send verification email with MFA code"""
-    # This is a placeholder - implement actual email sending
-    print(f"Sending MFA code {code} to email {email}")
-    # In production, integrate with SendGrid, AWS SES, or similar service
+    return await email_service.send_mfa_verification_email(
+        to_email=email,
+        verification_code=code,
+        user_name=user_name,
+    )
 
 def send_verification_sms(phone: str, code: str):
     """Send verification SMS with MFA code"""
@@ -489,7 +490,18 @@ async def setup_email_mfa(
     db.refresh(db_email)
     
     # Send email verification code
-    send_verification_email(email_request.email_address, verification_code_str)
+    user_name = f"{current_user.first_name or ''} {current_user.last_name or ''}".strip() or None
+    email_sent = await send_verification_email(
+        email_request.email_address,
+        verification_code_str,
+        user_name=user_name,
+    )
+
+    if not email_sent:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to send verification email. Please try again later.",
+        )
     
     return {
         "message": "Email verification code sent",

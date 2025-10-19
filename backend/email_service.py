@@ -10,12 +10,28 @@ logger = logging.getLogger(__name__)
 
 class EmailService:
     def __init__(self):
-        self.smtp_server = os.getenv("SMTP_SERVER", "smtp.gmail.com")
+        self.smtp_server = os.getenv("SMTP_SERVER")
         self.smtp_port = int(os.getenv("SMTP_PORT", "587"))
-        self.smtp_username = os.getenv("SMTP_USERNAME", "logu.monarch@gmail.com")
-        self.smtp_password = os.getenv("SMTP_PASSWORD", "fywe jsyv gioe pier")
+        self.smtp_username = os.getenv("SMTP_USERNAME")
+        self.smtp_password = os.getenv("SMTP_PASSWORD")
         self.from_email = os.getenv("FROM_EMAIL", self.smtp_username)
         self.from_name = os.getenv("FROM_NAME", "Comply-X")
+
+        required_settings = {
+            "SMTP_SERVER": self.smtp_server,
+            "SMTP_USERNAME": self.smtp_username,
+            "SMTP_PASSWORD": self.smtp_password,
+            "FROM_EMAIL": self.from_email,
+        }
+
+        self.is_configured = all(required_settings.values())
+
+        if not self.is_configured:
+            missing = [key for key, value in required_settings.items() if not value]
+            logger.warning(
+                "Email service is not fully configured. Missing settings: %s",
+                ", ".join(missing),
+            )
         
     async def send_email(
         self,
@@ -25,6 +41,10 @@ class EmailService:
         text_content: Optional[str] = None
     ) -> bool:
         """Send email with HTML content"""
+        if not self.is_configured:
+            logger.error("Cannot send email because SMTP settings are not fully configured.")
+            return False
+
         try:
             # Create message
             message = MIMEMultipart("alternative")
@@ -213,6 +233,87 @@ class EmailService:
         """
         
         return await self.send_email(to_email, subject, html_content)
+
+    async def send_mfa_verification_email(
+        self,
+        to_email: str,
+        verification_code: str,
+        user_name: Optional[str] = None
+    ) -> bool:
+        """Send MFA verification code email to the user."""
+
+        recipient_name = user_name or "there"
+        subject = "Your Comply-X verification code"
+
+        html_content = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset=\"utf-8\">
+            <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">
+            <title>Verification Code</title>
+            <style>
+                body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #111827; background-color: #f9fafb; }}
+                .container {{ max-width: 600px; margin: 0 auto; padding: 24px; }}
+                .card {{ background-color: #ffffff; border-radius: 12px; box-shadow: 0 10px 35px rgba(15, 23, 42, 0.1); overflow: hidden; }}
+                .header {{ background: linear-gradient(135deg, #2563eb, #4f46e5); color: #ffffff; padding: 24px; text-align: center; }}
+                .header h1 {{ margin: 0; font-size: 24px; letter-spacing: 0.5px; }}
+                .content {{ padding: 32px 28px; }}
+                .code-box {{
+                    font-size: 36px;
+                    letter-spacing: 8px;
+                    font-weight: 700;
+                    color: #1f2937;
+                    text-align: center;
+                    background-color: #eef2ff;
+                    border-radius: 10px;
+                    padding: 18px 0;
+                    margin: 24px 0;
+                    border: 1px solid #c7d2fe;
+                }}
+                .info {{ background-color: #eff6ff; padding: 18px 20px; border-radius: 10px; border-left: 4px solid #2563eb; margin-bottom: 24px; }}
+                .info strong {{ color: #1d4ed8; }}
+                .footer {{ text-align: center; font-size: 14px; color: #6b7280; padding: 16px 24px 24px; }}
+            </style>
+        </head>
+        <body>
+            <div class=\"container\">
+                <div class=\"card\">
+                    <div class=\"header\">
+                        <h1>Account Verification</h1>
+                    </div>
+                    <div class=\"content\">
+                        <p>Hi {recipient_name},</p>
+                        <p>Your verification code for Comply-X is:</p>
+                        <div class=\"code-box\">{verification_code}</div>
+                        <div class=\"info\">
+                            <strong>Security tip:</strong> This code will expire in 10 minutes. Do not share it with anyone.
+                        </div>
+                        <p>If you did not request this verification code, please secure your account immediately or contact our support team.</p>
+                        <p>Stay secure,<br>The Comply-X Team</p>
+                    </div>
+                    <div class=\"footer\">
+                        <p>This is an automated message, please do not reply.</p>
+                        <p>&copy; {datetime.utcnow().year} Comply-X. All rights reserved.</p>
+                    </div>
+                </div>
+            </div>
+        </body>
+        </html>
+        """
+
+        text_content = f"""
+        Hi {recipient_name},
+
+        Your Comply-X verification code is: {verification_code}
+
+        This code will expire in 10 minutes. If you did not request this code, please secure your account.
+
+        Stay secure,
+        The Comply-X Team
+        """
+
+        return await self.send_email(to_email, subject, html_content, text_content)
 
 # Global email service instance
 email_service = EmailService()
