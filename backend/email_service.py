@@ -10,12 +10,28 @@ logger = logging.getLogger(__name__)
 
 class EmailService:
     def __init__(self):
-        self.smtp_server = os.getenv("SMTP_SERVER", "smtp.gmail.com")
+        self.smtp_server = os.getenv("SMTP_SERVER")
         self.smtp_port = int(os.getenv("SMTP_PORT", "587"))
-        self.smtp_username = os.getenv("SMTP_USERNAME", "logu.monarch@gmail.com")
-        self.smtp_password = os.getenv("SMTP_PASSWORD", "fywe jsyv gioe pier")
+        self.smtp_username = os.getenv("SMTP_USERNAME")
+        self.smtp_password = os.getenv("SMTP_PASSWORD")
         self.from_email = os.getenv("FROM_EMAIL", self.smtp_username)
         self.from_name = os.getenv("FROM_NAME", "Comply-X")
+
+        required_settings = {
+            "SMTP_SERVER": self.smtp_server,
+            "SMTP_USERNAME": self.smtp_username,
+            "SMTP_PASSWORD": self.smtp_password,
+            "FROM_EMAIL": self.from_email,
+        }
+
+        self.is_configured = all(required_settings.values())
+
+        if not self.is_configured:
+            missing = [key for key, value in required_settings.items() if not value]
+            logger.warning(
+                "Email service is not fully configured. Missing settings: %s",
+                ", ".join(missing),
+            )
         
     async def send_email(
         self,
@@ -25,6 +41,10 @@ class EmailService:
         text_content: Optional[str] = None
     ) -> bool:
         """Send email with HTML content"""
+        if not self.is_configured:
+            logger.error("Cannot send email because SMTP settings are not fully configured.")
+            return False
+
         try:
             # Create message
             message = MIMEMultipart("alternative")
