@@ -82,13 +82,27 @@ def _permission_level_values(enum_cls: type[PermissionLevel] | PermissionLevel) 
 
     base_values = [member.value for member in actual_enum]
 
+    # Include canonical enum names to support legacy uppercase values that may
+    # have been persisted directly (for example, ``VIEW_ONLY``).
+    legacy_variants: list[str] = []
+    for legacy_key in LEGACY_PERMISSION_LEVEL_MAP.keys():
+        legacy_variants.append(legacy_key)
+        legacy_variants.append(legacy_key.upper())
+
     # Preserve order while removing duplicates.
     seen: set[str] = set()
     ordered_values: list[str] = []
-    for candidate in base_values:
+
+    def _append_unique(candidate: str) -> None:
         if candidate not in seen:
             ordered_values.append(candidate)
             seen.add(candidate)
+
+    for candidate in base_values:
+        _append_unique(candidate)
+
+    for candidate in legacy_variants:
+        _append_unique(candidate)
 
     return ordered_values
 
