@@ -19,6 +19,7 @@ import {
   Plus,
   Sparkles
 } from 'lucide-react'
+import { buildApiUrl } from '@/lib/api'
 
 interface Document {
   id: number
@@ -77,12 +78,6 @@ export default function DocumentsPage() {
   const [totalCount, setTotalCount] = useState(0)
   const [totalPages, setTotalPages] = useState(1)
   const [aiSearchState, setAiSearchState] = useState<AISearchState>({ plan: null, query: null })
-  const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'https://comply-x.onrender.com'
-
-  if (!API_BASE_URL) {
-    console.error('❌ NEXT_PUBLIC_API_URL is not defined. Please set it in your environment variables.')
-  }
-
   const orderDocumentsByUpdatedAt = useCallback(
     (docs: Document[]) =>
       docs
@@ -107,7 +102,7 @@ export default function DocumentsPage() {
         return
       }
       
-      const response = await fetch(`${API_BASE_URL}/api/documents/search?${queryString}`, {
+      const response = await fetch(buildApiUrl(`/documents/search?${queryString}`), {
         headers: {
           'Authorization': `Bearer ${token}`
         }
@@ -149,7 +144,7 @@ export default function DocumentsPage() {
         return
       }
 
-      const response = await fetch(`${API_BASE_URL}/api/documents/ai/search`, {
+      const response = await fetch(buildApiUrl('/documents/ai/search'), {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,

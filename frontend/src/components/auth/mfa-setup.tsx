@@ -23,8 +23,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '@/contexts/auth-context';
 import axios from 'axios';
-
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'https://comply-x.onrender.com';
+import { buildApiUrl } from '@/lib/api';
 
 interface MFASetupData {
   secret: string;
@@ -61,7 +60,7 @@ export function MFASetup() {
       const token = localStorage.getItem('auth_token');
       if (!token) return;
 
-      const response = await axios.get(`${API_BASE_URL}/api/auth/mfa/status`, {
+      const response = await axios.get(buildApiUrl('/auth/mfa/status'), {
         headers: { Authorization: `Bearer ${token}` }
       });
       setMfaStatus(response.data);
@@ -77,7 +76,7 @@ export function MFASetup() {
     try {
       const token = localStorage.getItem('auth_token');
       const response = await axios.post(
-        `${API_BASE_URL}/api/auth/mfa/setup`,
+        buildApiUrl('/auth/mfa/setup'),
         { password: formData.password },
         { headers: { Authorization: `Bearer ${token}` } }
       );
@@ -100,7 +99,7 @@ export function MFASetup() {
     try {
       const token = localStorage.getItem('auth_token');
       await axios.post(
-        `${API_BASE_URL}/api/auth/mfa/verify`,
+        buildApiUrl('/auth/mfa/verify'),
         {
           secret: setupData.secret,
           verification_code: formData.verificationCode,
@@ -125,7 +124,7 @@ export function MFASetup() {
     try {
       const token = localStorage.getItem('auth_token');
       await axios.post(
-        `${API_BASE_URL}/api/auth/mfa/disable`,
+        buildApiUrl('/auth/mfa/disable'),
         { password: formData.password },
         { headers: { Authorization: `Bearer ${token}` } }
       );

@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
+import { api } from '@/lib/api'
 import { 
   FileText, 
   AlertTriangle, 
@@ -33,28 +34,10 @@ interface DocumentStatsProps {
 export function DocumentStats({ detailed = false }: DocumentStatsProps) {
   const [stats, setStats] = useState<DocumentStatsData | null>(null)
   const [loading, setLoading] = useState(true)
-  const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL;
-
   const fetchStats = async () => {
     try {
-      const token = localStorage.getItem('auth_token')
-      if (!token) {
-        console.error('No authentication token found')
-        return
-      }
-      
-      const response = await fetch(`${API_BASE_URL}/api/documents/stats/overview`, {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      })
-
-      if (response.ok) {
-        const data = await response.json()
-        setStats(data)
-      } else {
-        console.error('Failed to fetch document stats')
-      }
+      const data = await api<DocumentStatsData>('/api/documents/stats/overview')
+      setStats(data)
     } catch (error) {
       console.error('Error fetching stats:', error)
     } finally {

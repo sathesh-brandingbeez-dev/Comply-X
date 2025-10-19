@@ -10,8 +10,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Eye, EyeOff, CheckCircle, AlertCircle, Lock } from 'lucide-react';
 import Link from 'next/link';
 import axios from 'axios';
-
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'https://comply-x.onrender.com';
+import { buildApiUrl } from '@/lib/api';
 
 function ResetPasswordForm() {
   const [formData, setFormData] = useState({
@@ -79,7 +78,7 @@ function ResetPasswordForm() {
     setError('');
 
     try {
-      await axios.post(`${API_BASE_URL}/api/auth/password-reset/confirm`, {
+      await axios.post(buildApiUrl('/auth/password-reset/confirm'), {
         token,
         new_password: formData.password
       });

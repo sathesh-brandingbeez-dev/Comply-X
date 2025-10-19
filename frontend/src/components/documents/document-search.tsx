@@ -13,6 +13,7 @@ import {
 } from '@/components/ui/select'
 import { Card, CardContent } from '@/components/ui/card'
 import { Search, Filter, X, Calendar, Sparkles, Loader2 } from 'lucide-react'
+import { buildApiUrl } from '@/lib/api'
 
 interface DocumentAISearchPlan {
   refined_query?: string
@@ -64,7 +65,6 @@ export function DocumentSearch({ onSearch, searchParams, advanced = false, onAIS
   const [showAdvanced, setShowAdvanced] = useState(advanced)
   const [aiLoading, setAiLoading] = useState(false)
   const [aiError, setAiError] = useState<string | null>(null)
-  const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL
 
   const documentTypes = [
     { value: 'all', label: 'All Types' },
@@ -187,7 +187,7 @@ export function DocumentSearch({ onSearch, searchParams, advanced = false, onAIS
     onAIStart?.()
 
     try {
-      const response = await fetch(`${API_BASE_URL}/api/documents/ai/search`, {
+      const response = await fetch(buildApiUrl('/documents/ai/search'), {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
