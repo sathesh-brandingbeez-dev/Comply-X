@@ -19,7 +19,7 @@ from database import Base
 from datetime import datetime
 import enum
 from typing import Optional
-from enum import Enum as PyEnum
+from enum import Enum as PyEnum, EnumMeta
 
 # Base = declarative_base()
 
@@ -38,6 +38,9 @@ class UserRole(str, enum.Enum):
     VIEWER = "viewer"
 
 # Enhanced permission levels as requested
+LEGACY_PERMISSION_LEVEL_MAP: dict[str, "PermissionLevel"] = {}
+
+
 class PermissionLevel(str, enum.Enum):
     """Five-tier permission model with legacy compatibility."""
 
@@ -47,37 +50,42 @@ class PermissionLevel(str, enum.Enum):
     ADMIN = "admin"
     SUPER_ADMIN = "super_admin"
 
-    _LEGACY_MAP = {
-        "view_only": READER,
-        "link_access": READER,
-        "edit_access": EDITOR,
-        "admin_access": ADMIN,
-    }
-
     @classmethod
     def _missing_(cls, value: object) -> "PermissionLevel | None":
         """Gracefully map legacy enum values stored in the database."""
 
         if isinstance(value, str):
-            mapped = cls._LEGACY_MAP.get(value.lower())
+            mapped = LEGACY_PERMISSION_LEVEL_MAP.get(value.lower())
             if mapped:
                 return mapped
         return None
 
 
-def _permission_level_values(enum_cls: type[PermissionLevel]) -> list[str]:
+LEGACY_PERMISSION_LEVEL_MAP.update(
+    {
+        "view_only": PermissionLevel.READER,
+        "link_access": PermissionLevel.READER,
+        "edit_access": PermissionLevel.EDITOR,
+        "admin_access": PermissionLevel.ADMIN,
+    }
+)
+
+
+def _permission_level_values(enum_cls: type[PermissionLevel] | PermissionLevel) -> list[str]:
     """Return all accepted database values for :class:`PermissionLevel`."""
 
-    base_values = [member.value for member in enum_cls]
-    member_names = [member.name for member in enum_cls]
+    actual_enum: EnumMeta | type[PermissionLevel]
+    if isinstance(enum_cls, EnumMeta):
+        actual_enum = enum_cls
+    else:
+        actual_enum = enum_cls.__class__
 
-    legacy_aliases = list(enum_cls._LEGACY_MAP.keys())
-    legacy_aliases += [alias.upper() for alias in enum_cls._LEGACY_MAP.keys()]
+    base_values = [member.value for member in actual_enum]
 
     # Preserve order while removing duplicates
     seen: set[str] = set()
     ordered_values: list[str] = []
-    for candidate in [*base_values, *member_names, *legacy_aliases]:
+    for candidate in base_values:
         if candidate not in seen:
             ordered_values.append(candidate)
             seen.add(candidate)
@@ -88,7 +96,7 @@ def _permission_level_values(enum_cls: type[PermissionLevel]) -> list[str]:
 def PermissionLevelEnum(**kwargs) -> Enum:
     """Factory for SQLAlchemy ``Enum`` that understands legacy values."""
 
-    return Enum(
+    sa_enum = Enum(
         PermissionLevel,
         values_callable=_permission_level_values,
         native_enum=False,
@@ -96,6 +104,26 @@ def PermissionLevelEnum(**kwargs) -> Enum:
         name="permissionlevel",
         **kwargs,
     )
+
+    object_lookup = getattr(sa_enum, "_object_lookup", None)
+    extended_values = list(getattr(sa_enum, "enums", []))
+
+    def _register(value: str, member: PermissionLevel) -> None:
+        if value not in extended_values:
+            extended_values.append(value)
+        if isinstance(object_lookup, dict):
+            object_lookup.setdefault(value, member)
+
+    for member in PermissionLevel:
+        _register(member.name, member)
+
+    for legacy_value, member in LEGACY_PERMISSION_LEVEL_MAP.items():
+        _register(legacy_value, member)
+        _register(legacy_value.upper(), member)
+
+    sa_enum.enums = extended_values
+
+    return sa_enum
 
 class AccessLevel(str, enum.Enum):
     PUBLIC = "public"
