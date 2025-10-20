@@ -603,9 +603,11 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime
+from pathlib import Path
 from typing import Dict, List
 
 from sqlalchemy import text
+from sqlalchemy.engine import make_url
 from sqlalchemy.orm import sessionmaker
 
 from database import engine, DATABASE_URL, Base
@@ -621,6 +623,27 @@ logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("init_db")
 
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
+
+
+def reset_sqlite_database() -> None:
+    """Remove the local SQLite database file so we start from a clean slate."""
+
+    if not DATABASE_URL.startswith("sqlite"):
+        return
+
+    # Close any pooled connections before manipulating the file on disk
+    engine.dispose()
+
+    db_url = make_url(DATABASE_URL)
+    db_path = db_url.database
+    if not db_path:
+        return
+
+    path = Path(db_path)
+    if path.exists():
+        log.info("Removing existing SQLite database at %s", path)
+        path.unlink()
+
 
 # -----------------------------
 # Create / migrate
@@ -790,6 +813,7 @@ def ensure_super_admin(session):
 # Entrypoint
 # -----------------------------
 def init_db():
+    reset_sqlite_database()
     create_tables()
     # migration guard (safe to call repeatedly)
     ensure_role_permissions_permission_level()
