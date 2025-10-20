@@ -128,6 +128,32 @@ class UserCreate(UserBase):
                     "notifications_sms": False
                 }
             ]
+    }
+}
+
+
+class RegistrationInitiationResponse(BaseModel):
+    """Response returned when starting self-service registration."""
+
+    verification_id: str = Field(..., description="Identifier for the pending registration verification")
+    expires_in: int = Field(..., description="Seconds until the verification code expires")
+    message: str = Field(..., description="Human readable confirmation message")
+
+
+class RegistrationConfirmationRequest(BaseModel):
+    """Payload required to finalise a self-service registration."""
+
+    verification_id: str = Field(..., min_length=6, description="Identifier provided during registration initiation")
+    verification_code: str = Field(..., min_length=6, max_length=6, description="6-digit email verification code")
+
+    model_config = {
+        "json_schema_extra": {
+            "examples": [
+                {
+                    "verification_id": "7a9c2b1f8e6d4c3b2a1f0e9d8c7b6a5f",
+                    "verification_code": "123456",
+                }
+            ]
         }
     }
 

@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from 'react'
+import { FormEvent, useEffect, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import * as z from 'zod'
@@ -19,6 +19,7 @@ import {
 import { Progress } from '@/components/ui/progress'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useAuth } from '@/contexts/auth-context'
+import { RegisterData } from '@/lib/auth'
 
 const registerSchema = z.object({
   // Step 1: Personal Information
@@ -109,7 +110,12 @@ export function RegisterForm({ onToggle, onSuccess }: RegisterFormProps) {
   const [selectedAreas, setSelectedAreas] = useState<string[]>([])
   const [departmentOption, setDepartmentOption] = useState('')
   const [customDepartment, setCustomDepartment] = useState('')
-  const { register: registerUser } = useAuth()
+  const [verificationStep, setVerificationStep] = useState<{ id: string; email: string; expiresIn?: number } | null>(null)
+  const [verificationCode, setVerificationCode] = useState('')
+  const [verificationError, setVerificationError] = useState('')
+  const [isVerifying, setIsVerifying] = useState(false)
+  const [pendingData, setPendingData] = useState<RegisterData | null>(null)
+  const { register: initiateRegistration, confirmRegistration } = useAuth()
 
   const {
     register,
@@ -216,15 +222,131 @@ export function RegisterForm({ onToggle, onSuccess }: RegisterFormProps) {
   const onSubmit = async (data: RegisterFormData) => {
     try {
       setError('')
-      const { confirm_password, ...userData } = data
-      await registerUser(userData)
+      setVerificationError('')
+      const registerPayload: RegisterData = {
+        email: data.email,
+        username: data.username,
+        first_name: data.first_name,
+        last_name: data.last_name,
+        password: data.password,
+        phone: data.phone,
+        position: data.position,
+        role: data.role,
+        employee_id: data.employee_id || undefined,
+        areas_of_responsibility: data.areas_of_responsibility ?? [],
+        timezone: data.timezone,
+        notifications_email: data.notifications_email,
+        notifications_sms: data.notifications_sms,
+      }
+
+      setPendingData(registerPayload)
+      const response = await initiateRegistration(registerPayload)
+      setSuccess(false)
+      setVerificationStep({ id: response.verification_id, email: registerPayload.email, expiresIn: response.expires_in })
+      setVerificationCode('')
+    } catch (err: any) {
+      setError(err.response?.data?.detail || 'Registration failed. Please try again.')
+    }
+  }
+
+  const handleVerificationSubmit = async (event?: FormEvent) => {
+    event?.preventDefault()
+    if (!verificationStep) {
+      return
+    }
+
+    if (verificationCode.trim().length === 0) {
+      setVerificationError('Verification code is required')
+      return
+    }
+
+    try {
+      setVerificationError('')
+      setIsVerifying(true)
+      await confirmRegistration(verificationStep.id, verificationCode.trim())
       setSuccess(true)
+      setVerificationStep(null)
+      setPendingData(null)
       if (onSuccess) {
         onSuccess()
       }
     } catch (err: any) {
-      setError(err.response?.data?.detail || 'Registration failed. Please try again.')
+      setVerificationError(err.response?.data?.detail || 'Verification failed. Please try again.')
+    } finally {
+      setIsVerifying(false)
     }
+  }
+
+  const handleResendCode = async () => {
+    if (!pendingData) {
+      return
+    }
+
+    try {
+      setVerificationError('')
+      const response = await initiateRegistration(pendingData)
+      setVerificationStep({ id: response.verification_id, email: pendingData.email, expiresIn: response.expires_in })
+      setVerificationCode('')
+    } catch (err: any) {
+      setVerificationError(err.response?.data?.detail || 'Unable to resend verification code. Please try again.')
+    }
+  }
+
+  if (verificationStep && !success) {
+    return (
+      <Card className="w-full max-w-2xl mx-auto">
+        <CardHeader>
+          <CardTitle className="text-2xl font-semibold text-primary">Verify your email</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          <p className="text-sm text-muted-foreground">
+            We sent a 6-digit verification code to <span className="font-medium text-primary">{verificationStep.email}</span>.
+            Enter the code below to finish creating your account.
+          </p>
+
+          <form onSubmit={handleVerificationSubmit} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="verification-code">Verification Code</Label>
+              <Input
+                id="verification-code"
+                type="text"
+                inputMode="numeric"
+                pattern="[0-9]*"
+                maxLength={6}
+                value={verificationCode}
+                onChange={(event) => setVerificationCode(event.target.value.replace(/[^0-9]/g, ''))}
+                placeholder="Enter 6-digit code"
+              />
+            </div>
+
+            {verificationError && (
+              <div className="rounded-md bg-red-50 p-3 text-sm text-red-500">{verificationError}</div>
+            )}
+
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <Button type="submit" className="w-full sm:w-auto" disabled={isVerifying}>
+                {isVerifying ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Verifying...
+                  </>
+                ) : (
+                  'Confirm Registration'
+                )}
+              </Button>
+              <Button type="button" variant="outline" onClick={handleResendCode} disabled={isVerifying}>
+                Resend code
+              </Button>
+            </div>
+          </form>
+
+          <p className="text-xs text-muted-foreground">
+            Didn&apos;t receive the email? Check your spam folder or resend the code. The verification code expires in approximately
+            {verificationStep.expiresIn ? ` ${Math.max(1, Math.round(verificationStep.expiresIn / 60))} minutes.` : ' 30 minutes.'}
+          </p>
+        </CardContent>
+      </Card>
+    )
   }
 
   if (success) {
@@ -237,7 +359,7 @@ export function RegisterForm({ onToggle, onSuccess }: RegisterFormProps) {
             </div>
             <div>
               <h3 className="text-2xl font-semibold text-primary">Registration Successful!</h3>
-              <p className="text-gray-600 mt-2">Your account has been created and is pending approval.</p>
+              <p className="text-gray-600 mt-2">Your account is ready. You can now sign in using your email and password.</p>
             </div>
             {onToggle && (
               <Button onClick={onToggle} className="w-full bg-primary hover:bg-primary/90 text-primary-foreground">

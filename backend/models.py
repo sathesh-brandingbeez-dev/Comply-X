@@ -406,6 +406,21 @@ class RegistrationSubmission(Base):
 
     created_at = Column(DateTime, default=datetime.utcnow)
 
+
+class RegistrationVerification(Base):
+    __tablename__ = "registration_verifications"
+
+    id = Column(Integer, primary_key=True, index=True)
+    verification_id = Column(String(64), unique=True, nullable=False, index=True)
+    email = Column(String(255), nullable=False, index=True)
+    username = Column(String(100), nullable=False, index=True)
+    payload = Column(JSON, nullable=False)
+    code_hash = Column(String(128), nullable=False)
+    salt = Column(String(64), nullable=False)
+    expires_at = Column(DateTime, nullable=False)
+    consumed_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
 # Device and MFA Models
 
 class UserDevice(Base):

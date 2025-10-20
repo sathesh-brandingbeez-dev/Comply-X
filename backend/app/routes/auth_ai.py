@@ -6,8 +6,12 @@ import logging
 from datetime import datetime
 from typing import Optional
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
+from sqlalchemy.orm import Session
+
+from database import get_db
+from models import User
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +34,10 @@ class LoginEvaluationResponse(BaseModel):
 
 
 @router.post("/evaluate-login", response_model=LoginEvaluationResponse, summary="Assess login risk")
-async def evaluate_login(payload: LoginEvaluationRequest) -> LoginEvaluationResponse:
+async def evaluate_login(
+    payload: LoginEvaluationRequest,
+    db: Session = Depends(get_db),
+) -> LoginEvaluationResponse:
     """Return an adaptive authentication recommendation for a login attempt."""
 
     try:
@@ -92,16 +99,34 @@ async def evaluate_login(payload: LoginEvaluationRequest) -> LoginEvaluationResp
             require_mfa = False
             action = "Proceed with standard sign-in workflow."
 
-        if reasons:
+        identifier = (payload.identifier or "").strip()
+        user: Optional[User] = None
+        if identifier:
+            if "@" in identifier:
+                user = db.query(User).filter(User.email == identifier).first()
+            if not user:
+                user = db.query(User).filter(User.username == identifier).first()
+
+        if user and user.mfa_enabled:
+            require_mfa = True
+            if risk_level == "low":
+                risk_level = "medium"
+            action = "Enter the verification code sent to your email to finish signing in."
             personalised_message = (
-                "We've spotted "
-                + ", ".join(reasons)
-                + ". We'll apply adaptive protections to keep the account safe."
+                "Multi-factor authentication is enabled for this account. "
+                "We've sent a verification code to your email."
             )
         else:
-            personalised_message = (
-                "Welcome back! We'll fast-track your access based on your trusted login pattern."
-            )
+            if reasons:
+                personalised_message = (
+                    "We've spotted "
+                    + ", ".join(reasons)
+                    + ". We'll apply adaptive protections to keep the account safe."
+                )
+            else:
+                personalised_message = (
+                    "Welcome back! We'll fast-track your access based on your trusted login pattern."
+                )
 
         return LoginEvaluationResponse(
             risk_level=risk_level,
