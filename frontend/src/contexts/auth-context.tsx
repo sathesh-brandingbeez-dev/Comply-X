@@ -1,13 +1,14 @@
 "use client"
 
 import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react'
-import { authService, User, LoginCredentials, RegisterData } from '@/lib/auth'
+import { authService, User, LoginCredentials, RegisterData, RegistrationInitiationResponse } from '@/lib/auth'
 
 interface AuthContextType {
   user: User | null
   loading: boolean
   login: (credentials: LoginCredentials) => Promise<void>
-  register: (userData: RegisterData) => Promise<void>
+  register: (userData: RegisterData) => Promise<RegistrationInitiationResponse>
+  confirmRegistration: (verificationId: string, verificationCode: string) => Promise<User>
   logout: () => void
   isAuthenticated: boolean
   completeOAuthLogin: (token: string) => Promise<void>
@@ -63,9 +64,20 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const register = async (userData: RegisterData) => {
     setLoading(true)
     try {
-      const newUser = await authService.register(userData)
-      // Auto-login after registration is optional
-      // For now, we'll just return and let user login manually
+      const response = await authService.register(userData)
+      return response
+    } catch (error) {
+      throw error
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const confirmRegistration = async (verificationId: string, verificationCode: string) => {
+    setLoading(true)
+    try {
+      const createdUser = await authService.confirmRegistration(verificationId, verificationCode)
+      return createdUser
     } catch (error) {
       throw error
     } finally {
@@ -98,6 +110,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     loading,
     login,
     register,
+    confirmRegistration,
     logout,
     isAuthenticated: !!user,
     completeOAuthLogin,

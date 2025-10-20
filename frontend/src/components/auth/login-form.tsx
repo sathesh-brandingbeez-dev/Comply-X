@@ -43,6 +43,7 @@ export function LoginForm({ initialError, onClearInitialError }: LoginFormProps)
   const [mfaCode, setMfaCode] = useState('')
   const [mfaCodeRequested, setMfaCodeRequested] = useState(false)
   const [socialLoading, setSocialLoading] = useState<'google' | 'microsoft' | null>(null)
+  const [availableProviders, setAvailableProviders] = useState<string[]>([])
   const { login } = useAuth()
   const router = useRouter()
 
@@ -71,8 +72,34 @@ export function LoginForm({ initialError, onClearInitialError }: LoginFormProps)
     }
   }, [setValue])
 
+  useEffect(() => {
+    let isMounted = true
+
+    const fetchProviders = async () => {
+      try {
+        const providers = await authService.getAvailableOAuthProviders()
+        if (isMounted) {
+          setAvailableProviders(providers)
+        }
+      } catch (error) {
+        console.warn('Unable to load OAuth providers', error)
+        if (isMounted) {
+          setAvailableProviders([])
+        }
+      }
+    }
+
+    fetchProviders()
+
+    return () => {
+      isMounted = false
+    }
+  }, [])
+
   const identifierValue = watch('identifier')
   const isEmail = identifierValue?.includes('@')
+  const showGoogle = availableProviders.includes('google')
+  const showMicrosoft = availableProviders.includes('microsoft')
 
   const badgeStyles = useMemo(() => {
     switch (riskLevel) {
@@ -106,16 +133,25 @@ export function LoginForm({ initialError, onClearInitialError }: LoginFormProps)
         }
       }
 
-      setRiskLevel((riskAssessment.risk_level as RiskLevel) ?? 'low')
-      setAiMessage(riskAssessment.personalised_message)
-      setMfaRequired(riskAssessment.require_mfa)
+      const requiresMfa = Boolean(riskAssessment.require_mfa)
+      const computedRiskLevel: RiskLevel = requiresMfa && riskAssessment.risk_level === 'low'
+        ? 'medium'
+        : ((riskAssessment.risk_level as RiskLevel) ?? 'low')
 
-      if (riskAssessment.require_mfa && mfaCode.trim().length === 0) {
+      setRiskLevel(computedRiskLevel)
+      setMfaRequired(requiresMfa)
+      setAiMessage(
+        requiresMfa
+          ? 'Multi-factor authentication is enabled for this account. Enter the verification code sent to your email.'
+          : riskAssessment.personalised_message
+      )
+
+      if (requiresMfa && mfaCode.trim().length === 0) {
         if (!mfaCodeRequested) {
           try {
             const challenge = await authService.requestEmailMfaCode(data.identifier)
             if (challenge.sent) {
-              setAiMessage('We\'ve emailed you a verification code. It will expire in 10 minutes.')
+              setAiMessage('We\'ve emailed a verification code to your registered email. It will expire in 10 minutes.')
             }
             setMfaCodeRequested(true)
           } catch (challengeError: any) {
@@ -128,7 +164,7 @@ export function LoginForm({ initialError, onClearInitialError }: LoginFormProps)
         return
       }
 
-      if (!riskAssessment.require_mfa) {
+      if (!requiresMfa) {
         setMfaCode('')
         setMfaCodeRequested(false)
       }
@@ -136,7 +172,7 @@ export function LoginForm({ initialError, onClearInitialError }: LoginFormProps)
       const loginData = {
         username: data.identifier,
         password: data.password,
-        mfa_code: riskAssessment.require_mfa ? mfaCode : undefined,
+        mfa_code: requiresMfa ? mfaCode : undefined,
       }
 
       await login(loginData)
@@ -164,6 +200,11 @@ export function LoginForm({ initialError, onClearInitialError }: LoginFormProps)
 
     try {
       setError('')
+      if (!availableProviders.includes(provider)) {
+        const providerLabel = provider === 'google' ? 'Google' : 'Microsoft'
+        setError(`${providerLabel} sign-in is not enabled.`)
+        return
+      }
       setSocialLoading(provider)
       const redirectUri = `${window.location.origin}/login`
       const authorizationUrl = await authService.getOAuthAuthorizationUrl(provider, redirectUri)
@@ -229,7 +270,7 @@ export function LoginForm({ initialError, onClearInitialError }: LoginFormProps)
               onChange={(event) => setMfaCode(event.target.value)}
               placeholder="Enter 6-digit code"
             />
-            <p className="text-xs text-muted-foreground">Security check triggered by adaptive authentication.</p>
+            <p className="text-xs text-muted-foreground">Check your email inbox for the verification code required to finish signing in.</p>
           </div>
         )}
 
@@ -268,38 +309,45 @@ export function LoginForm({ initialError, onClearInitialError }: LoginFormProps)
               <div className="absolute inset-x-0 top-1/2 -z-10 h-px bg-border" aria-hidden="true" />
             </div>
             <div className="grid gap-3">
-              <Button
-                type="button"
-                variant="outline"
-                className="w-full"
-                onClick={() => handleSocialLogin('google')}
-                disabled={isSubmitting || socialLoading !== null}
-              >
-                {socialLoading === 'google' ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Redirecting...
-                  </>
-                ) : (
-                  'Continue with Google'
-                )}
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                className="w-full"
-                onClick={() => handleSocialLogin('microsoft')}
-                disabled={isSubmitting || socialLoading !== null}
-              >
-                {socialLoading === 'microsoft' ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Redirecting...
-                  </>
-                ) : (
-                  'Continue with Microsoft'
-                )}
-              </Button>
+              {showGoogle && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-full"
+                  onClick={() => handleSocialLogin('google')}
+                  disabled={isSubmitting || socialLoading !== null}
+                >
+                  {socialLoading === 'google' ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Redirecting...
+                    </>
+                  ) : (
+                    'Continue with Google'
+                  )}
+                </Button>
+              )}
+              {showMicrosoft && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-full"
+                  onClick={() => handleSocialLogin('microsoft')}
+                  disabled={isSubmitting || socialLoading !== null}
+                >
+                  {socialLoading === 'microsoft' ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Redirecting...
+                    </>
+                  ) : (
+                    'Continue with Microsoft'
+                  )}
+                </Button>
+              )}
+              {!showGoogle && !showMicrosoft && (
+                <p className="text-xs text-muted-foreground text-center">No social sign-in options are enabled.</p>
+              )}
             </div>
           </div>
         </div>

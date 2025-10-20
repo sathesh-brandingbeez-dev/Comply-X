@@ -9,6 +9,7 @@ from datetime import datetime, timedelta
 from threading import Lock
 from typing import Any, Dict, Optional
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
+from uuid import uuid4
 
 import pyotp
 import qrcode
@@ -19,14 +20,16 @@ from fastapi.responses import RedirectResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
 from passlib.context import CryptContext
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from database import get_db
-from models import User, UserRole, PasswordResetToken, MFAMethod
+from models import User, UserRole, PasswordResetToken, MFAMethod, RegistrationVerification
 from schemas import (
     UserCreate, UserLogin, Token, UserResponse, TokenData,
-    PasswordResetRequest, PasswordResetConfirm, MFASetupRequest, 
-    MFASetupResponse, MFAVerifyRequest, MFALoginRequest, MFAStatusResponse
+    PasswordResetRequest, PasswordResetConfirm, MFASetupRequest,
+    MFASetupResponse, MFAVerifyRequest, MFALoginRequest, MFAStatusResponse,
+    RegistrationInitiationResponse, RegistrationConfirmationRequest,
 )
 from email_service import email_service
 import os
@@ -473,10 +476,21 @@ def generate_qr_code(secret: str, user_email: str) -> str:
     buffer = io.BytesIO()
     img.save(buffer, format='PNG')
     buffer.seek(0)
-    
+
     # Convert to base64
     img_base64 = base64.b64encode(buffer.getvalue()).decode()
     return f"data:image/png;base64,{img_base64}"
+
+
+@router.get("/oauth/providers")
+async def list_oauth_providers():
+    providers: list[str] = []
+    if all([GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI]):
+        providers.append("google")
+    if all([MICROSOFT_CLIENT_ID, MICROSOFT_CLIENT_SECRET, MICROSOFT_REDIRECT_URI]):
+        providers.append("microsoft")
+    return {"providers": providers}
+
 
 @router.get("/oauth/{provider}/authorize")
 async def oauth_authorize(provider: str, redirect_uri: Optional[str] = None):
@@ -580,51 +594,205 @@ async def oauth_callback(
         )
 
 
-@router.post("/register",
-             response_model=UserResponse,
-             summary="Register New User",
-             description="Create a new user account with the provided information. Email and username must be unique.",
-             responses={
-                 200: {"description": "User created successfully"},
-                 400: {"description": "Email already registered or username already taken"},
-             })
+@router.post(
+    "/register",
+    response_model=RegistrationInitiationResponse,
+    summary="Start Registration",
+    description="Initiate self-service registration by sending a verification code to the provided email address.",
+    responses={
+        200: {"description": "Verification code sent"},
+        400: {"description": "Email or username already registered"},
+        503: {"description": "Email service unavailable"},
+    },
+)
 async def register(user_data: UserCreate, db: Session = Depends(get_db)):
-    # Check if user already exists
-    if get_user_by_email(db, user_data.email):
+    existing_user = get_user_by_email(db, user_data.email)
+    if existing_user:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Email already registered"
+            detail="Email already registered",
         )
-    
+
     if get_user_by_username(db, user_data.username):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Username already taken"
+            detail="Username already taken",
         )
-    
-    # Create new user
-    hashed_password = get_password_hash(user_data.password)
-    db_user = User(
+
+    now = datetime.utcnow()
+
+    # Clean up stale verification requests
+    db.query(RegistrationVerification).filter(RegistrationVerification.expires_at < now).delete(synchronize_session=False)
+
+    db.query(RegistrationVerification).filter(
+        or_(
+            RegistrationVerification.email == user_data.email,
+            RegistrationVerification.username == user_data.username,
+        )
+    ).delete(synchronize_session=False)
+
+    verification_code = f"{secrets.randbelow(1_000_000):06d}"
+    salt = secrets.token_hex(16)
+    hashed_code = hashlib.sha256(f"{verification_code}{salt}".encode()).hexdigest()
+    verification_id = uuid4().hex
+    expires_at = now + timedelta(minutes=30)
+
+    registration_payload = {
+        "first_name": user_data.first_name,
+        "last_name": user_data.last_name,
+        "hashed_password": get_password_hash(user_data.password),
+        "role": user_data.role.value if isinstance(user_data.role, UserRole) else str(user_data.role),
+        "phone": user_data.phone,
+        "position": user_data.position,
+        "employee_id": getattr(user_data, "employee_id", None),
+        "areas_of_responsibility": getattr(user_data, "areas_of_responsibility", []),
+        "timezone": getattr(user_data, "timezone", "UTC"),
+        "notifications_email": getattr(user_data, "notifications_email", True),
+        "notifications_sms": getattr(user_data, "notifications_sms", False),
+    }
+
+    record = RegistrationVerification(
+        verification_id=verification_id,
         email=user_data.email,
         username=user_data.username,
-        first_name=user_data.first_name,
-        last_name=user_data.last_name,
-        hashed_password=hashed_password,
-        role=user_data.role,
-        phone=user_data.phone,
-        position=user_data.position,
-        employee_id=getattr(user_data, 'employee_id', None),
-        areas_of_responsibility=json.dumps(getattr(user_data, 'areas_of_responsibility', [])),
-        timezone=getattr(user_data, 'timezone', 'UTC'),
-        notifications_email=getattr(user_data, 'notifications_email', True),
-        notifications_sms=getattr(user_data, 'notifications_sms', False)
+        payload=registration_payload,
+        code_hash=hashed_code,
+        salt=salt,
+        expires_at=expires_at,
     )
-    
-    db.add(db_user)
-    db.commit()
-    db.refresh(db_user)
-    
-    return UserResponse.model_validate(db_user)
+
+    db.add(record)
+
+    try:
+        db.flush()
+        user_name = f"{user_data.first_name} {user_data.last_name}".strip() or None
+        email_sent = await email_service.send_registration_verification_email(
+            to_email=user_data.email,
+            verification_code=verification_code,
+            user_name=user_name,
+        )
+        if not email_sent:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Verification email could not be sent. Please try again later.",
+            )
+        db.commit()
+    except HTTPException:
+        db.rollback()
+        raise
+    except Exception as exc:  # noqa: BLE001
+        db.rollback()
+        logger.exception("Failed to initiate registration for %s", user_data.email)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Unable to start registration at this time.",
+        ) from exc
+
+    expires_in = max(0, int((expires_at - datetime.utcnow()).total_seconds()))
+
+    return RegistrationInitiationResponse(
+        verification_id=verification_id,
+        expires_in=expires_in,
+        message="A verification code has been sent to your email address.",
+    )
+
+
+@router.post(
+    "/register/confirm",
+    response_model=UserResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Complete Registration",
+    description="Verify the emailed code and create the user account.",
+    responses={
+        201: {"description": "User registered successfully"},
+        400: {"description": "Invalid or expired verification code"},
+    },
+)
+async def confirm_registration(
+    confirmation: RegistrationConfirmationRequest,
+    db: Session = Depends(get_db),
+):
+    record = db.query(RegistrationVerification).filter(
+        RegistrationVerification.verification_id == confirmation.verification_id
+    ).first()
+
+    if not record or record.consumed_at:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid or expired verification request",
+        )
+
+    if record.expires_at < datetime.utcnow():
+        db.delete(record)
+        db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Verification code has expired. Please restart registration.",
+        )
+
+    computed_hash = hashlib.sha256(f"{confirmation.verification_code}{record.salt}".encode()).hexdigest()
+    if computed_hash != record.code_hash:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid verification code",
+        )
+
+    if get_user_by_email(db, record.email) or get_user_by_username(db, record.username):
+        db.delete(record)
+        db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This account has already been created.",
+        )
+
+    payload = record.payload or {}
+    hashed_password = payload.get("hashed_password")
+    if not hashed_password:
+        db.delete(record)
+        db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Registration data is incomplete. Please restart registration.",
+        )
+
+    role_value = payload.get("role", UserRole.EMPLOYEE.value)
+    try:
+        role = UserRole(role_value)
+    except ValueError:
+        role = UserRole.EMPLOYEE
+
+    new_user = User(
+        email=record.email,
+        username=record.username,
+        first_name=payload.get("first_name", ""),
+        last_name=payload.get("last_name", ""),
+        hashed_password=hashed_password,
+        role=role,
+        phone=payload.get("phone"),
+        position=payload.get("position"),
+        employee_id=payload.get("employee_id"),
+        areas_of_responsibility=json.dumps(payload.get("areas_of_responsibility") or []),
+        timezone=payload.get("timezone", "UTC"),
+        notifications_email=payload.get("notifications_email", True),
+        notifications_sms=payload.get("notifications_sms", False),
+        is_verified=True,
+    )
+
+    try:
+        db.add(new_user)
+        db.flush()
+        db.delete(record)
+        db.commit()
+        db.refresh(new_user)
+    except Exception as exc:  # noqa: BLE001
+        db.rollback()
+        logger.exception("Failed to complete registration for %s", record.email)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Unable to complete registration at this time.",
+        ) from exc
+
+    return UserResponse.model_validate(new_user)
 
 @router.post("/login", 
              response_model=Token,

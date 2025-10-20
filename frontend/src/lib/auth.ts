@@ -34,9 +34,19 @@ export interface RegisterData {
   last_name: string
   password: string
   phone?: string
-  department?: string
   position?: string
   role?: 'admin' | 'manager' | 'auditor' | 'employee' | 'viewer'
+  employee_id?: string
+  areas_of_responsibility?: string[]
+  timezone?: string
+  notifications_email?: boolean
+  notifications_sms?: boolean
+}
+
+export interface RegistrationInitiationResponse {
+  verification_id: string
+  expires_in: number
+  message: string
 }
 
 export interface AuthResponse {
@@ -172,9 +182,22 @@ class AuthService {
     await this.apiClient.post('/auth/mfa/disable', { password })
   }
 
-  async register(userData: RegisterData): Promise<User> {
-    const response = await this.apiClient.post('/auth/register', userData)
+  async register(userData: RegisterData): Promise<RegistrationInitiationResponse> {
+    const response = await this.apiClient.post<RegistrationInitiationResponse>('/auth/register', userData)
     return response.data
+  }
+
+  async confirmRegistration(verificationId: string, verificationCode: string): Promise<User> {
+    const response = await this.apiClient.post<User>('/auth/register/confirm', {
+      verification_id: verificationId,
+      verification_code: verificationCode,
+    })
+    return response.data
+  }
+
+  async getAvailableOAuthProviders(): Promise<string[]> {
+    const response = await this.apiClient.get<{ providers: string[] }>('/auth/oauth/providers')
+    return response.data.providers
   }
 
   async getCurrentUser(): Promise<User> {

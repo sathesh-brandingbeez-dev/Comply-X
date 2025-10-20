@@ -143,6 +143,9 @@ async def send_email_login_code(
         # Avoid disclosing whether an account exists – respond as if the email was handled.
         return EmailMFALoginChallengeResponse(sent=False, method="email")
 
+    if not user.mfa_enabled:
+        return EmailMFALoginChallengeResponse(sent=False, method="email")
+
     email_method = db.query(MFAMethod).filter(
         MFAMethod.user_id == user.id,
         MFAMethod.method_type == "email",
