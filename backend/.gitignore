@@ -24,3 +24,6 @@ Thumbs.db
 # Generated fonts
 fonts/*.ttf
 fonts/*.otf
+
+# Local SQLite database file
+comply_x.db
