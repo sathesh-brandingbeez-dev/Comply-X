@@ -14,6 +14,7 @@ from sqlalchemy import (
     JSON,
     Table,
 )
+from sqlalchemy.types import TypeDecorator
 from sqlalchemy.orm import relationship, declarative_base
 from database import Base
 from datetime import datetime
@@ -83,9 +84,7 @@ def _permission_level_values(enum_cls: type[PermissionLevel] | PermissionLevel) 
     return [member.value for member in actual_enum]
 
 
-def PermissionLevelEnum(**kwargs) -> Enum:
-    """Factory for SQLAlchemy ``Enum`` that understands legacy values."""
-
+def _build_permissionlevel_enum(**kwargs) -> Enum:
     sa_enum = Enum(
         PermissionLevel,
         values_callable=_permission_level_values,
@@ -128,6 +127,66 @@ def PermissionLevelEnum(**kwargs) -> Enum:
     sa_enum.enums = extended_values
 
     return sa_enum
+
+
+_PERMISSIONLEVEL_ENUM = _build_permissionlevel_enum()
+
+
+class _PermissionLevelType(TypeDecorator):
+    """Custom SQLAlchemy type that gracefully accepts legacy enum strings."""
+
+    impl = _PERMISSIONLEVEL_ENUM
+    cache_ok = True
+
+    def __init__(self, **kwargs):
+        if kwargs:
+            raise TypeError(
+                "PermissionLevelEnum does not accept keyword arguments"
+            )
+        super().__init__()
+
+    def process_bind_param(self, value, dialect):
+        if value is None:
+            return None
+
+        if isinstance(value, PermissionLevel):
+            return value.value
+
+        if isinstance(value, str):
+            normalized = value.strip()
+            try:
+                return PermissionLevel(normalized).value
+            except ValueError:
+                mapped = LEGACY_PERMISSION_LEVEL_MAP.get(normalized.lower())
+                if mapped:
+                    return mapped.value
+
+        raise ValueError(
+            f"Invalid permission level value: {value!r}"
+        )
+
+    def process_result_value(self, value, dialect):
+        if value is None:
+            return None
+
+        if isinstance(value, PermissionLevel):
+            return value
+
+        try:
+            return PermissionLevel(value)
+        except ValueError:
+            mapped = LEGACY_PERMISSION_LEVEL_MAP.get(str(value).lower())
+            if mapped:
+                return mapped
+        raise LookupError(
+            f"{value!r} is not among the defined permission levels"
+        )
+
+
+def PermissionLevelEnum(**kwargs) -> _PermissionLevelType:
+    """Factory for :class:`_PermissionLevelType` to keep existing API."""
+
+    return _PermissionLevelType(**kwargs)
 
 class AccessLevel(str, enum.Enum):
     PUBLIC = "public"
