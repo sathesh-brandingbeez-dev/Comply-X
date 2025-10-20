@@ -81,7 +81,25 @@ def _permission_level_values(enum_cls: type[PermissionLevel] | PermissionLevel) 
     else:
         actual_enum = enum_cls.__class__
 
-    return [member.value for member in actual_enum]
+    seen: set[str] = set()
+    values: list[str] = []
+
+    def _add(value: str) -> None:
+        if value not in seen:
+            seen.add(value)
+            values.append(value)
+
+    for member in actual_enum:
+        _add(member.value)
+
+    for member in actual_enum:
+        _add(member.name)
+
+    for legacy_value in LEGACY_PERMISSION_LEVEL_MAP.keys():
+        _add(legacy_value)
+        _add(legacy_value.upper())
+
+    return values
 
 
 def _build_permissionlevel_enum(**kwargs) -> Enum:
